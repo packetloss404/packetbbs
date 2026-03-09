@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeBBS - Connect</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+    }
+    #header {
+      color: #00bfff;
+      font-size: 14px;
+      padding: 10px;
+      text-align: center;
+    }
+    #header span { color: #00ff88; }
+    #terminal-container {
+      border: 2px solid #333;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(0, 191, 255, 0.1);
+    }
+    #status {
+      color: #666;
+      font-size: 12px;
+      padding: 8px;
+      text-align: center;
+    }
+    #status.connected { color: #00ff88; }
+    #status.disconnected { color: #ff4444; }
+    .scanline {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.03) 0px,
+        rgba(0,0,0,0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <span>VibeBBS</span> - Web Terminal
+  </div>
+  <div id="terminal-container">
+    <div id="terminal"></div>
+  </div>
+  <div id="status">Connecting...</div>
+  <div class="scanline"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+  <script>
+    const term = new window.Terminal({
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontFamily: "'Courier New', 'Lucida Console', monospace",
+      fontSize: 16,
+      lineHeight: 1.1,
+      cols: 80,
+      rows: 25,
+      theme: {
+        background: '#0a0a0a',
+        foreground: '#aaaaaa',
+        cursor: '#00ff88',
+        cursorAccent: '#0a0a0a',
+        selectionBackground: '#00bfff44',
+        black: '#000000',
+        red: '#aa0000',
+        green: '#00aa00',
+        yellow: '#aa5500',
+        blue: '#0000aa',
+        magenta: '#aa00aa',
+        cyan: '#00aaaa',
+        white: '#aaaaaa',
+        brightBlack: '#555555',
+        brightRed: '#ff5555',
+        brightGreen: '#55ff55',
+        brightYellow: '#ffff55',
+        brightBlue: '#5555ff',
+        brightMagenta: '#ff55ff',
+        brightCyan: '#55ffff',
+        brightWhite: '#ffffff',
+      }
+    });
+
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
+
+    const container = document.getElementById('terminal');
+    term.open(container);
+    fitAddon.fit();
+
+    const statusEl = document.getElementById('status');
+    let ws;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+      ws.onopen = () => {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'connected';
+      };
+
+      ws.onmessage = (event) => {
+        term.write(event.data);
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'Disconnected - Refresh to reconnect';
+        statusEl.className = 'disconnected';
+        term.write('\r\n\x1b[91m--- Connection closed ---\x1b[0m\r\n');
+      };
+
+      ws.onerror = () => {
+        statusEl.textContent = 'Connection error';
+        statusEl.className = 'disconnected';
+      };
+    }
+
+    term.onData((data) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      }
+    });
+
+    window.addEventListener('resize', () => fitAddon.fit());
+
+    connect();
+  </script>
+</body>
+</html>
