@@ -90,9 +90,64 @@ function init() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS graffiti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS private_mail (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_user TEXT NOT NULL,
+      to_user TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      read INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS polls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      question TEXT NOT NULL,
+      author TEXT DEFAULT 'SysOp',
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS poll_options (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      poll_id INTEGER NOT NULL,
+      option_text TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (poll_id) REFERENCES polls(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS poll_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      poll_id INTEGER NOT NULL,
+      option_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(poll_id, user_id),
+      FOREIGN KEY (poll_id) REFERENCES polls(id),
+      FOREIGN KEY (option_id) REFERENCES poll_options(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS motd (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      body TEXT NOT NULL,
+      author TEXT DEFAULT 'SysOp',
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_base ON messages(base_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_files_area ON files(area_id);
+    CREATE INDEX IF NOT EXISTS idx_private_mail_to ON private_mail(to_user);
+    CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id);
   `);
 
   // Seed default sysop user if no users exist
@@ -128,6 +183,30 @@ function init() {
       'Welcome to VibeBBS! This is the General Discussion area.\r\n' +
       'Feel free to introduce yourself and start chatting.\r\n\r\n' +
       'Remember: Be excellent to each other!');
+
+    // Seed MOTD
+    db.prepare(`
+      INSERT INTO motd (body, author) VALUES (?, ?)
+    `).run(
+      'Welcome to VibeBBS! Check out the Message Bases, play some Door Games,\r\n' +
+      'and leave your mark on the Graffiti Wall. New features added regularly!\r\n' +
+      '\r\n' +
+      'Remember: Be excellent to each other. Keep vibing!',
+      'SysOp'
+    );
+
+    // Seed a sample poll
+    const pollResult = db.prepare(`
+      INSERT INTO polls (question, author) VALUES (?, ?)
+    `).run('What is your favorite AI coding assistant?', 'SysOp');
+    const pollId = pollResult.lastInsertRowid;
+    const pollOptions = ['Claude', 'ChatGPT', 'Copilot', 'Gemini', 'Other'];
+    for (let i = 0; i < pollOptions.length; i++) {
+      db.prepare('INSERT INTO poll_options (poll_id, option_text, sort_order) VALUES (?, ?, ?)').run(pollId, pollOptions[i], i);
+    }
+
+    // Seed graffiti wall
+    db.prepare('INSERT INTO graffiti (username, message) VALUES (?, ?)').run('SysOp', 'First! Welcome to VibeBBS - leave your mark here!');
 
     db.prepare(`
       INSERT INTO messages (base_id, from_user, to_user, subject, body)
@@ -326,4 +405,130 @@ const files = {
   }
 };
 
-module.exports = { init, users, messages, bulletins, callLog, files, hashPassword, verifyPassword };
+// Graffiti wall operations
+const graffiti = {
+  getRecent(limit = 20) {
+    return db.prepare('SELECT * FROM graffiti ORDER BY created_at DESC LIMIT ?').all(limit);
+  },
+
+  add(username, message) {
+    return db.prepare('INSERT INTO graffiti (username, message) VALUES (?, ?)').run(username, message);
+  },
+};
+
+// Private mail operations
+const privateMail = {
+  getInbox(username) {
+    return db.prepare('SELECT * FROM private_mail WHERE to_user = ? COLLATE NOCASE ORDER BY created_at DESC').all(username);
+  },
+
+  getSent(username) {
+    return db.prepare('SELECT * FROM private_mail WHERE from_user = ? COLLATE NOCASE ORDER BY created_at DESC').all(username);
+  },
+
+  getById(id) {
+    return db.prepare('SELECT * FROM private_mail WHERE id = ?').get(id);
+  },
+
+  send(fromUser, toUser, subject, body) {
+    return db.prepare('INSERT INTO private_mail (from_user, to_user, subject, body) VALUES (?, ?, ?, ?)').run(fromUser, toUser, subject, body);
+  },
+
+  markRead(id) {
+    db.prepare('UPDATE private_mail SET read = 1 WHERE id = ?').run(id);
+  },
+
+  delete(id) {
+    db.prepare('DELETE FROM private_mail WHERE id = ?').run(id);
+  },
+
+  countUnread(username) {
+    return db.prepare('SELECT COUNT(*) as count FROM private_mail WHERE to_user = ? COLLATE NOCASE AND read = 0').get(username).count;
+  },
+};
+
+// Poll operations
+const polls = {
+  getActive() {
+    return db.prepare('SELECT * FROM polls WHERE active = 1 ORDER BY created_at DESC').all();
+  },
+
+  getAll() {
+    return db.prepare('SELECT * FROM polls ORDER BY created_at DESC').all();
+  },
+
+  getById(id) {
+    return db.prepare('SELECT * FROM polls WHERE id = ?').get(id);
+  },
+
+  getOptions(pollId) {
+    return db.prepare('SELECT * FROM poll_options WHERE poll_id = ? ORDER BY sort_order').all(pollId);
+  },
+
+  getResults(pollId) {
+    return db.prepare(`
+      SELECT po.id, po.option_text, COUNT(pv.id) as votes
+      FROM poll_options po
+      LEFT JOIN poll_votes pv ON po.id = pv.option_id
+      WHERE po.poll_id = ?
+      GROUP BY po.id
+      ORDER BY po.sort_order
+    `).all(pollId);
+  },
+
+  hasVoted(pollId, userId) {
+    return !!db.prepare('SELECT id FROM poll_votes WHERE poll_id = ? AND user_id = ?').get(pollId, userId);
+  },
+
+  vote(pollId, optionId, userId) {
+    return db.prepare('INSERT OR IGNORE INTO poll_votes (poll_id, option_id, user_id) VALUES (?, ?, ?)').run(pollId, optionId, userId);
+  },
+
+  getTotalVotes(pollId) {
+    return db.prepare('SELECT COUNT(*) as count FROM poll_votes WHERE poll_id = ?').get(pollId).count;
+  },
+
+  create(question, options, author = 'SysOp') {
+    const result = db.prepare('INSERT INTO polls (question, author) VALUES (?, ?)').run(question, author);
+    const pollId = result.lastInsertRowid;
+    for (let i = 0; i < options.length; i++) {
+      db.prepare('INSERT INTO poll_options (poll_id, option_text, sort_order) VALUES (?, ?, ?)').run(pollId, options[i], i);
+    }
+    return pollId;
+  },
+
+  toggle(id) {
+    db.prepare('UPDATE polls SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id);
+  },
+
+  delete(id) {
+    db.prepare('DELETE FROM poll_votes WHERE poll_id = ?').run(id);
+    db.prepare('DELETE FROM poll_options WHERE poll_id = ?').run(id);
+    db.prepare('DELETE FROM polls WHERE id = ?').run(id);
+  },
+};
+
+// MOTD operations
+const motd = {
+  getActive() {
+    return db.prepare('SELECT * FROM motd WHERE active = 1 ORDER BY created_at DESC LIMIT 1').get();
+  },
+
+  getAll() {
+    return db.prepare('SELECT * FROM motd ORDER BY created_at DESC').all();
+  },
+
+  create(body, author = 'SysOp') {
+    return db.prepare('INSERT INTO motd (body, author) VALUES (?, ?)').run(body, author);
+  },
+
+  toggle(id) {
+    db.prepare('UPDATE motd SET active = CASE WHEN active = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id);
+  },
+
+  delete(id) {
+    db.prepare('DELETE FROM motd WHERE id = ?').run(id);
+  },
+};
+
+module.exports = { init, users, messages, bulletins, callLog, files, graffiti, privateMail, polls, motd, hashPassword, verifyPassword };

@@ -166,10 +166,12 @@ ${d}    │  ${g}User: ${w}${(username || '').padEnd(18)}${d}  ${g}Node: ${w}${(
 ${d}    ├──────────────────────────────────────────────────────┤
 ${d}    │                                                      │
 ${d}    │  ${y}[${w}M${y}]${c} Message Bases        ${y}[${w}W${y}]${c} Who's Online          ${d}│
-${d}    │  ${y}[${w}F${y}]${c} File Areas           ${y}[${w}U${y}]${c} User Settings         ${d}│
-${d}    │  ${y}[${w}D${y}]${c} Door Games           ${y}[${w}P${y}]${c} Page SysOp            ${d}│
-${d}    │  ${y}[${w}B${y}]${c} Bulletins            ${y}[${w}S${y}]${c} System Stats          ${d}│
-${d}    │  ${y}[${w}C${y}]${c} Chat Rooms           ${y}[${w}G${y}]${c} Goodbye / Logoff      ${d}│
+${d}    │  ${y}[${w}E${y}]${c} Private Mail         ${y}[${w}U${y}]${c} User Settings         ${d}│
+${d}    │  ${y}[${w}F${y}]${c} File Areas           ${y}[${w}P${y}]${c} Page SysOp            ${d}│
+${d}    │  ${y}[${w}D${y}]${c} Door Games           ${y}[${w}S${y}]${c} System Stats          ${d}│
+${d}    │  ${y}[${w}B${y}]${c} Bulletins            ${y}[${w}V${y}]${c} Voting Booths         ${d}│
+${d}    │  ${y}[${w}C${y}]${c} Chat Rooms           ${y}[${w}R${y}]${c} Graffiti Wall         ${d}│
+${d}    │  ${y}[${w}G${y}]${c} Goodbye / Logoff                               ${d}│
 ${d}    │                                                      │
 ${d}    └──────────────────────────────────────────────────────┘
 ${r}

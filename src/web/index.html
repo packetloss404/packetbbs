@@ -28,6 +28,9 @@
       border-radius: 4px;
       overflow: hidden;
       box-shadow: 0 0 30px rgba(0, 191, 255, 0.1);
+      width: 820px;
+      padding: 8px;
+      background: #0a0a0a;
     }
     #status {
       color: #666;
@@ -63,7 +66,6 @@
   <div class="scanline"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
   <script>
     const term = new window.Terminal({
@@ -73,7 +75,8 @@
       fontSize: 16,
       lineHeight: 1.1,
       cols: 80,
-      rows: 25,
+      rows: 40,
+      scrollback: 1000,
       theme: {
         background: '#0a0a0a',
         foreground: '#aaaaaa',
@@ -99,13 +102,10 @@
       }
     });
 
-    const fitAddon = new window.FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
     term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
 
     const container = document.getElementById('terminal');
     term.open(container);
-    fitAddon.fit();
 
     const statusEl = document.getElementById('status');
     let ws;
@@ -140,8 +140,6 @@
         ws.send(data);
       }
     });
-
-    window.addEventListener('resize', () => fitAddon.fit());
 
     connect();
   </script>

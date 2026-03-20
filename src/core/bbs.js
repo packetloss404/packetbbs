@@ -28,6 +28,19 @@ const STATES = {
   USER_SETTINGS: 'user_settings',
   USER_SETTINGS_FIELD: 'user_settings_field',
   CHAT_ROOMS: 'chat_rooms',
+  CHAT_ACTIVE: 'chat_active',
+  GRAFFITI_WALL: 'graffiti_wall',
+  GRAFFITI_WRITE: 'graffiti_write',
+  PRIVATE_MAIL_MENU: 'private_mail_menu',
+  PRIVATE_MAIL_INBOX: 'private_mail_inbox',
+  PRIVATE_MAIL_READ: 'private_mail_read',
+  PRIVATE_MAIL_WRITE_TO: 'private_mail_write_to',
+  PRIVATE_MAIL_WRITE_SUBJECT: 'private_mail_write_subject',
+  PRIVATE_MAIL_WRITE_BODY: 'private_mail_write_body',
+  POLLS_LIST: 'polls_list',
+  POLL_VIEW: 'poll_view',
+  POLL_VOTE: 'poll_vote',
+  MOTD: 'motd',
   GOODBYE: 'goodbye',
   PAGE_SYSOP: 'page_sysop',
   PAUSE: 'pause',
@@ -63,7 +76,9 @@ class BBSSession {
 
   write(data) {
     try {
-      this.transport.write(data);
+      // Normalize line endings: bare \n → \r\n for proper terminal display
+      const normalized = data.replace(/\r?\n/g, '\r\n');
+      this.transport.write(normalized);
     } catch (e) {
       // Connection may have closed
     }
@@ -213,6 +228,48 @@ class BBSSession {
       case STATES.USER_SETTINGS_FIELD:
         this.handleUserSettingsField(input);
         break;
+      case STATES.CHAT_ROOMS:
+        this.handleChatRooms(input);
+        break;
+      case STATES.CHAT_ACTIVE:
+        this.handleChatActive(input);
+        break;
+      case STATES.GRAFFITI_WALL:
+        this.handleGraffitiWall(input);
+        break;
+      case STATES.GRAFFITI_WRITE:
+        this.handleGraffitiWrite(input);
+        break;
+      case STATES.PRIVATE_MAIL_MENU:
+        this.handlePrivateMailMenu(input);
+        break;
+      case STATES.PRIVATE_MAIL_INBOX:
+        this.handlePrivateMailInbox(input);
+        break;
+      case STATES.PRIVATE_MAIL_READ:
+        this.handlePrivateMailRead(input);
+        break;
+      case STATES.PRIVATE_MAIL_WRITE_TO:
+        this.handlePrivateMailWriteTo(input);
+        break;
+      case STATES.PRIVATE_MAIL_WRITE_SUBJECT:
+        this.handlePrivateMailWriteSubject(input);
+        break;
+      case STATES.PRIVATE_MAIL_WRITE_BODY:
+        this.handlePrivateMailWriteBody(input);
+        break;
+      case STATES.POLLS_LIST:
+        this.handlePollsList(input);
+        break;
+      case STATES.POLL_VIEW:
+        this.handlePollView(input);
+        break;
+      case STATES.POLL_VOTE:
+        this.handlePollVote(input);
+        break;
+      case STATES.MOTD:
+        this.showMainMenu();
+        break;
       default:
         this.showMainMenu();
     }
@@ -331,7 +388,19 @@ class BBSSession {
       this.nodeNum
     );
 
-    this.showMainMenu();
+    // Check for new private mail
+    const unreadMail = db.privateMail.countUnread(user.username);
+    if (unreadMail > 0) {
+      this.write(`\r\n${ansi.brightYellow}    *** You have ${unreadMail} unread private mail message${unreadMail > 1 ? 's' : ''}! ***${ansi.reset}\r\n`);
+    }
+
+    // Show MOTD if one exists
+    const motdEntry = db.motd.getActive();
+    if (motdEntry) {
+      this.showMotd(motdEntry);
+    } else {
+      this.showMainMenu();
+    }
   }
 
   // ─── MAIN MENU ──────────────────────────────────────────
@@ -351,6 +420,9 @@ class BBSSession {
       case 'M':
         this.showMessageBases();
         break;
+      case 'E':
+        this.showPrivateMailMenu();
+        break;
       case 'F':
         this.showFileAreas();
         break;
@@ -362,6 +434,12 @@ class BBSSession {
         break;
       case 'C':
         this.showChatRooms();
+        break;
+      case 'R':
+        this.showGraffitiWall();
+        break;
+      case 'V':
+        this.showPollsList();
         break;
       case 'W':
         this.showWhosOnline();
@@ -837,6 +915,10 @@ class BBSSession {
     this.write(screen);
   }
 
+  handleBulletins(input) {
+    this.showMainMenu();
+  }
+
   // ─── OTHER SCREENS ──────────────────────────────────────
 
   showWhosOnline() {
@@ -938,11 +1020,602 @@ class BBSSession {
     this.write(ansi.pausePrompt);
   }
 
+  // ─── CHAT ROOMS ──────────────────────────────────────────
+
   showChatRooms() {
-    this.write(`\r\n${ansi.brightYellow}    Chat rooms coming soon!${ansi.reset}\r\n`);
-    this.write(ansi.pausePrompt);
-    this.state = STATES.PAUSE;
-    this.pauseCallback = () => this.showMainMenu();
+    this.state = STATES.CHAT_ROOMS;
+    this.nodeManager.setActivity(this.nodeNum, 'Chat Lobby');
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const m = ansi.brightMagenta;
+    const d = ansi.cyan;
+
+    const screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${m}              ░█▀▀░█░█░█▀█░▀█▀░░░█▀▄░█▀█░█▀█░█▄█    ${d}│\r\n` +
+      `${d}    │${m}              ░█░░░█▀█░█▀█░░█░░░░█▀▄░█░█░█░█░█░█    ${d}│\r\n` +
+      `${d}    │${m}              ░▀▀▀░▀░▀░▀░▀░░▀░░░░▀░▀░▀▀▀░▀▀▀░▀░▀    ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
+      `${d}    │                                                      │\r\n` +
+      `${d}    │  ${y}[${w}1${y}]${c} The Lobby           ${g}General chat for everyone   ${d}│\r\n` +
+      `${d}    │  ${y}[${w}2${y}]${c} Vibe Lounge         ${g}Chill vibes only            ${d}│\r\n` +
+      `${d}    │  ${y}[${w}3${y}]${c} Code Corner         ${g}Talk shop, share code       ${d}│\r\n` +
+      `${d}    │                                                      │\r\n` +
+      `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
+      `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Room #: ');
+  }
+
+  handleChatRooms(input) {
+    const cmd = (input || '').toUpperCase();
+    if (cmd === 'Q' || !cmd) {
+      this.showMainMenu();
+      return;
+    }
+
+    const roomNames = { '1': 'The Lobby', '2': 'Vibe Lounge', '3': 'Code Corner' };
+    if (roomNames[cmd]) {
+      this.stateData.chatRoom = cmd;
+      this.stateData.chatRoomName = roomNames[cmd];
+      this.enterChat();
+    } else {
+      this.write(`${ansi.brightRed}    Invalid room!${ansi.reset}\r\n`);
+      this.prompt('Room #: ');
+    }
+  }
+
+  enterChat() {
+    this.state = STATES.CHAT_ACTIVE;
+    this.nodeManager.setActivity(this.nodeNum, `Chat: ${this.stateData.chatRoomName}`);
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const d = ansi.cyan;
+
+    this.write(ansi.clear);
+    this.write(`${d}    ┌──────────────────────────────────────────────────────┐\r\n`);
+    this.write(`${d}    │  ${w}Chat Room: ${c}${this.stateData.chatRoomName.padEnd(39)} ${d}│\r\n`);
+    this.write(`${d}    │  ${g}Type /Q to quit, /W to see who's here               ${d}│\r\n`);
+    this.write(`${d}    └──────────────────────────────────────────────────────┘${r}\r\n\r\n`);
+
+    // Announce to other chatters in same room
+    this.broadcastChat(`${ansi.brightYellow}*** ${this.user.username} has entered the room ***${ansi.reset}`);
+    this.prompt('> ');
+  }
+
+  handleChatActive(input) {
+    if (!input) {
+      this.prompt('> ');
+      return;
+    }
+
+    const cmd = input.toUpperCase();
+
+    if (cmd === '/Q') {
+      this.broadcastChat(`${ansi.brightYellow}*** ${this.user.username} has left the room ***${ansi.reset}`);
+      this.showChatRooms();
+      return;
+    }
+
+    if (cmd === '/W') {
+      const chatters = [];
+      for (const [nodeNum, node] of this.nodeManager.nodes) {
+        if (node.session && node.session.stateData.chatRoom === this.stateData.chatRoom &&
+            node.session.state === STATES.CHAT_ACTIVE) {
+          chatters.push(node.username || 'Unknown');
+        }
+      }
+      this.write(`${ansi.brightCyan}    In room: ${ansi.brightWhite}${chatters.join(', ')}${ansi.reset}\r\n`);
+      this.prompt('> ');
+      return;
+    }
+
+    // Broadcast message to all users in the same chat room
+    this.broadcastChat(`${ansi.brightGreen}<${this.user.username}>${ansi.reset} ${input}`);
+    this.prompt('> ');
+  }
+
+  broadcastChat(message) {
+    for (const [nodeNum, node] of this.nodeManager.nodes) {
+      if (node.session && node.session.stateData.chatRoom === this.stateData.chatRoom &&
+          node.session.state === STATES.CHAT_ACTIVE) {
+        if (nodeNum !== this.nodeNum) {
+          node.session.write(`\r${ansi.eraseLine}    ${message}\r\n`);
+          node.session.prompt('> ');
+        }
+      }
+    }
+  }
+
+  // ─── GRAFFITI WALL ──────────────────────────────────────
+
+  showGraffitiWall() {
+    this.state = STATES.GRAFFITI_WALL;
+    this.nodeManager.setActivity(this.nodeNum, 'Graffiti Wall');
+
+    const entries = db.graffiti.getRecent(15);
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const m = ansi.brightMagenta;
+    const d = ansi.cyan;
+
+    let screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${m}        ░█▀▀░█▀▄░█▀█░█▀▀░█▀▀░▀█▀░▀█▀░▀█▀            ${d}│\r\n` +
+      `${d}    │${m}        ░█░█░█▀▄░█▀█░█▀▀░█▀▀░░█░░░█░░░█░            ${d}│\r\n` +
+      `${d}    │${m}        ░▀▀▀░▀░▀░▀░▀░▀░░░▀░░░▀▀▀░░▀░░▀▀▀            ${d}│\r\n` +
+      `${d}    │${w}                    The Wall                          ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    if (entries.length === 0) {
+      screen += `${d}    │  ${w}The wall is blank. Be the first to write!           ${d}│\r\n`;
+    } else {
+      for (const entry of entries.reverse()) {
+        const user = ansi.stripCodes(entry.username).substring(0, 12).padEnd(12);
+        const msg = entry.message.substring(0, 38).padEnd(38);
+        screen += `${d}    │  ${y}${user} ${w}${msg}${d}│\r\n`;
+      }
+    }
+
+    screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+    screen += `${d}    │  ${y}[${w}W${y}]${c} Write on the wall   ${y}[${w}Q${y}]${c} Return to Main Menu   ${d}  │\r\n`;
+    screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Command: ');
+  }
+
+  handleGraffitiWall(input) {
+    const cmd = (input || '').toUpperCase();
+    if (cmd === 'Q' || !cmd) {
+      this.showMainMenu();
+      return;
+    }
+    if (cmd === 'W') {
+      this.state = STATES.GRAFFITI_WRITE;
+      this.prompt('Your message (max 38 chars): ');
+      return;
+    }
+    this.prompt('Command: ');
+  }
+
+  handleGraffitiWrite(input) {
+    if (!input) {
+      this.showGraffitiWall();
+      return;
+    }
+
+    const msg = input.substring(0, 38);
+    db.graffiti.add(this.user.username, msg);
+    this.write(`${ansi.brightGreen}    Your mark has been left on the wall!${ansi.reset}\r\n`);
+    this.showGraffitiWall();
+  }
+
+  // ─── PRIVATE MAIL ──────────────────────────────────────
+
+  showPrivateMailMenu() {
+    this.state = STATES.PRIVATE_MAIL_MENU;
+    this.nodeManager.setActivity(this.nodeNum, 'Private Mail');
+
+    const unread = db.privateMail.countUnread(this.user.username);
+    const inbox = db.privateMail.getInbox(this.user.username);
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const m = ansi.brightMagenta;
+    const d = ansi.cyan;
+
+    const screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${m}        ░█▄█░█▀█░▀█▀░█░░░░░█▀▄░█▀█░▀▄▀              ${d}│\r\n` +
+      `${d}    │${m}        ░█░█░█▀█░░█░░█░░░░░█▀▄░█░█░░█░              ${d}│\r\n` +
+      `${d}    │${m}        ░▀░▀░▀░▀░▀▀▀░▀▀▀░░░▀▀░░▀▀▀░▀░▀              ${d}│\r\n` +
+      `${d}    │${w}                 Private Mail                        ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
+      `${d}    │  ${g}Inbox: ${w}${String(inbox.length).padEnd(5)} ${g}Unread: ${w}${String(unread).padEnd(5)}                     ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
+      `${d}    │                                                      │\r\n` +
+      `${d}    │  ${y}[${w}I${y}]${c} Read Inbox          ${y}[${w}W${y}]${c} Write New Mail         ${d}│\r\n` +
+      `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
+      `${d}    │                                                      │\r\n` +
+      `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Command: ');
+  }
+
+  handlePrivateMailMenu(input) {
+    const cmd = (input || '').toUpperCase();
+    if (cmd === 'Q' || !cmd) {
+      this.showMainMenu();
+      return;
+    }
+    if (cmd === 'I') {
+      this.showPrivateMailInbox();
+      return;
+    }
+    if (cmd === 'W') {
+      this.state = STATES.PRIVATE_MAIL_WRITE_TO;
+      this.stateData.newMail = {};
+      this.prompt('To: ');
+      return;
+    }
+    this.prompt('Command: ');
+  }
+
+  showPrivateMailInbox() {
+    this.state = STATES.PRIVATE_MAIL_INBOX;
+    const inbox = db.privateMail.getInbox(this.user.username);
+    this.stateData.mailInbox = inbox;
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const d = ansi.cyan;
+
+    let screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${w}                      Inbox                           ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
+      `${d}    │  ${y}#    ${w}Subject                  ${c}From          ${g}Status ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    if (inbox.length === 0) {
+      screen += `${d}    │  ${w}No mail in your inbox.                              ${d}│\r\n`;
+    } else {
+      for (const mail of inbox.slice(0, 20)) {
+        const num = String(mail.id).padEnd(5);
+        const subj = (mail.subject || '').substring(0, 24).padEnd(24);
+        const from = (mail.from_user || '').substring(0, 13).padEnd(13);
+        const status = mail.read ? `${d}read  ` : `${g}NEW   `;
+        screen += `${d}    │  ${y}${num}${w}${subj} ${c}${from} ${status}${d}│\r\n`;
+      }
+    }
+
+    screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+    screen += `${d}    │  ${y}[${w}#${y}]${c} Read mail   ${y}[${w}Q${y}]${c} Back to Mail Menu             ${d}  │\r\n`;
+    screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Mail #: ');
+  }
+
+  handlePrivateMailInbox(input) {
+    if (!input || input.toUpperCase() === 'Q') {
+      this.showPrivateMailMenu();
+      return;
+    }
+
+    const mailId = parseInt(input);
+    if (!isNaN(mailId)) {
+      const mail = db.privateMail.getById(mailId);
+      if (mail && mail.to_user.toUpperCase() === this.user.username.toUpperCase()) {
+        this.showPrivateMailRead(mail);
+        return;
+      }
+    }
+
+    this.write(`${ansi.brightRed}    Invalid mail number!${ansi.reset}\r\n`);
+    this.prompt('Mail #: ');
+  }
+
+  showPrivateMailRead(mail) {
+    this.state = STATES.PRIVATE_MAIL_READ;
+    this.stateData.currentMail = mail;
+    db.privateMail.markRead(mail.id);
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const d = ansi.cyan;
+
+    this.write(`${d}    ┌──────────────────────────────────────────────────────┐\r\n`);
+    this.write(`${d}    │ ${y}Mail#: ${w}${String(mail.id).padEnd(8)} ${y}Date: ${w}${(mail.created_at || '').padEnd(20)} ${d}     │\r\n`);
+    this.write(`${d}    │ ${y}From:  ${w}${(mail.from_user || '').padEnd(20)} ${y}To: ${w}${(mail.to_user || '').padEnd(17)} ${d}│\r\n`);
+    this.write(`${d}    │ ${y}Subj:  ${w}${(mail.subject || '').padEnd(44)} ${d}│\r\n`);
+    this.write(`${d}    ├──────────────────────────────────────────────────────┤\r\n`);
+    this.write(`${d}    │${r}\r\n`);
+
+    const lines = (mail.body || '').split('\r\n');
+    for (const line of lines) {
+      this.write(`      ${line}\r\n`);
+    }
+
+    this.write(`${d}    │\r\n`);
+    this.write(`${d}    ├──────────────────────────────────────────────────────┤\r\n`);
+    this.write(`${d}    │  ${y}[${w}R${y}]${c}eply  ${y}[${w}D${y}]${c}elete  ${y}[${w}Q${y}]${c}uit to inbox            ${d}    │\r\n`);
+    this.write(`${d}    └──────────────────────────────────────────────────────┘${r}\r\n`);
+    this.prompt('Command: ');
+  }
+
+  handlePrivateMailRead(input) {
+    const cmd = (input || '').toUpperCase();
+
+    if (cmd === 'R') {
+      this.state = STATES.PRIVATE_MAIL_WRITE_TO;
+      const mail = this.stateData.currentMail;
+      this.stateData.newMail = {
+        to: mail.from_user,
+        subject: 'Re: ' + (mail.subject || '').replace(/^Re: /i, ''),
+      };
+      this.write(`\r\n${ansi.brightGreen}    Replying to ${mail.from_user}${ansi.reset}\r\n`);
+      this.prompt(`To [${this.stateData.newMail.to}]: `);
+      return;
+    }
+
+    if (cmd === 'D') {
+      db.privateMail.delete(this.stateData.currentMail.id);
+      this.write(`${ansi.brightYellow}    Mail deleted.${ansi.reset}\r\n`);
+      this.showPrivateMailInbox();
+      return;
+    }
+
+    this.showPrivateMailInbox();
+  }
+
+  handlePrivateMailWriteTo(input) {
+    const nm = this.stateData.newMail;
+    nm.to = input || nm.to || '';
+    if (!nm.to) {
+      this.write(`${ansi.brightRed}    Recipient cannot be empty!${ansi.reset}\r\n`);
+      this.prompt('To: ');
+      return;
+    }
+
+    // Verify user exists
+    const recipient = db.users.findByUsername(nm.to);
+    if (!recipient) {
+      this.write(`${ansi.brightRed}    User not found!${ansi.reset}\r\n`);
+      this.prompt('To: ');
+      return;
+    }
+    nm.to = recipient.username; // Use canonical casing
+
+    this.state = STATES.PRIVATE_MAIL_WRITE_SUBJECT;
+    if (nm.subject) {
+      this.prompt(`Subject [${nm.subject}]: `);
+    } else {
+      this.prompt('Subject: ');
+    }
+  }
+
+  handlePrivateMailWriteSubject(input) {
+    const nm = this.stateData.newMail;
+    nm.subject = input || nm.subject || '';
+    if (!nm.subject) {
+      this.write(`${ansi.brightRed}    Subject cannot be empty!${ansi.reset}\r\n`);
+      this.prompt('Subject: ');
+      return;
+    }
+
+    this.state = STATES.PRIVATE_MAIL_WRITE_BODY;
+    this.stateData.mailLines = [];
+    this.write(`\r\n${ansi.brightGreen}    Enter your message (type ${ansi.brightWhite}/S${ansi.brightGreen} to send, ${ansi.brightWhite}/A${ansi.brightGreen} to abort):${ansi.reset}\r\n`);
+    this.write(`${ansi.cyan}    ──────────────────────────────────────────${ansi.reset}\r\n`);
+    this.prompt('│ ');
+  }
+
+  handlePrivateMailWriteBody(input) {
+    if (input.toUpperCase() === '/S') {
+      const body = this.stateData.mailLines.join('\r\n');
+      if (!body.trim()) {
+        this.write(`${ansi.brightRed}    Message is empty! Aborted.${ansi.reset}\r\n`);
+        this.showPrivateMailMenu();
+        return;
+      }
+
+      const nm = this.stateData.newMail;
+      db.privateMail.send(this.user.username, nm.to, nm.subject, body);
+
+      // Notify recipient if online
+      for (const [nodeNum, node] of this.nodeManager.nodes) {
+        if (node.username && node.username.toUpperCase() === nm.to.toUpperCase() && node.session) {
+          node.session.write(`\r\n${ansi.brightYellow}    *** New private mail from ${this.user.username}! ***${ansi.reset}\r\n`);
+        }
+      }
+
+      this.write(`\r\n${ansi.brightGreen}    Mail sent to ${nm.to}!${ansi.reset}\r\n`);
+      this.showPrivateMailMenu();
+      return;
+    }
+
+    if (input.toUpperCase() === '/A') {
+      this.write(`${ansi.brightYellow}    Mail aborted.${ansi.reset}\r\n`);
+      this.showPrivateMailMenu();
+      return;
+    }
+
+    this.stateData.mailLines.push(input);
+    this.prompt('│ ');
+  }
+
+  // ─── VOTING BOOTHS / POLLS ─────────────────────────────
+
+  showPollsList() {
+    this.state = STATES.POLLS_LIST;
+    this.nodeManager.setActivity(this.nodeNum, 'Voting Booths');
+
+    const activePolls = db.polls.getActive();
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const m = ansi.brightMagenta;
+    const d = ansi.cyan;
+
+    let screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${m}        ░█░█░█▀█░▀█▀░▀█▀░█▀█░█▀▀░░░░░░░░░░░░░       ${d}│\r\n` +
+      `${d}    │${m}        ░▀▄▀░█░█░░█░░░█░░█░█░█░█░░░░░░░░░░░░░       ${d}│\r\n` +
+      `${d}    │${m}        ░░▀░░▀▀▀░░▀░░▀▀▀░▀░▀░▀▀▀░░░░░░░░░░░░░       ${d}│\r\n` +
+      `${d}    │${w}                  Voting Booths                       ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
+      `${d}    │  ${y}#   ${w}Question                                  ${g}By   ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    if (activePolls.length === 0) {
+      screen += `${d}    │  ${w}No active polls at this time.                      ${d}│\r\n`;
+    } else {
+      for (const poll of activePolls) {
+        const num = String(poll.id).padEnd(4);
+        const q = poll.question.substring(0, 38).padEnd(38);
+        const by = (poll.author || '').substring(0, 5).padEnd(5);
+        screen += `${d}    │  ${y}${num}${w}${q}${g}${by}${d}│\r\n`;
+      }
+    }
+
+    screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+    screen += `${d}    │  ${y}[${w}#${y}]${c} View/Vote poll   ${y}[${w}Q${y}]${c} Return to Main Menu      ${d}  │\r\n`;
+    screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Poll #: ');
+  }
+
+  handlePollsList(input) {
+    if (!input || input.toUpperCase() === 'Q') {
+      this.showMainMenu();
+      return;
+    }
+
+    const pollId = parseInt(input);
+    if (!isNaN(pollId)) {
+      const poll = db.polls.getById(pollId);
+      if (poll && poll.active) {
+        this.stateData.currentPoll = poll;
+        this.showPollView();
+        return;
+      }
+    }
+
+    this.write(`${ansi.brightRed}    Invalid poll number!${ansi.reset}\r\n`);
+    this.prompt('Poll #: ');
+  }
+
+  showPollView() {
+    const poll = this.stateData.currentPoll;
+    const hasVoted = db.polls.hasVoted(poll.id, this.user.id);
+    const results = db.polls.getResults(poll.id);
+    const totalVotes = db.polls.getTotalVotes(poll.id);
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const m = ansi.brightMagenta;
+    const d = ansi.cyan;
+
+    let screen = ansi.clear +
+      `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │  ${w}${poll.question.substring(0, 50).padEnd(50)} ${d}│\r\n` +
+      `${d}    │  ${g}By: ${c}${(poll.author || '').padEnd(20)} ${g}Votes: ${c}${String(totalVotes).padEnd(17)} ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    for (const opt of results) {
+      const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+      const barLen = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 25) : 0;
+      const bar = '█'.repeat(barLen) + '░'.repeat(25 - barLen);
+      const optNum = String(opt.id).padEnd(4);
+      const optText = opt.option_text.substring(0, 15).padEnd(15);
+
+      if (hasVoted) {
+        screen += `${d}    │  ${y}${optText} ${m}${bar} ${w}${String(pct).padStart(3)}% ${c}(${opt.votes})${d}│\r\n`;
+      } else {
+        screen += `${d}    │  ${y}[${w}${optNum.trim()}${y}]${c} ${optText}                                    ${d}│\r\n`;
+      }
+    }
+
+    screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    if (hasVoted) {
+      this.state = STATES.POLL_VIEW;
+      screen += `${d}    │  ${g}You have already voted.  ${y}[${w}Q${y}]${c} Back to polls        ${d}  │\r\n`;
+    } else {
+      this.state = STATES.POLL_VOTE;
+      screen += `${d}    │  ${y}[${w}#${y}]${c} Vote   ${y}[${w}Q${y}]${c} Back to polls without voting         ${d}  │\r\n`;
+    }
+
+    screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+
+    this.write(screen);
+    this.prompt('Choice: ');
+  }
+
+  handlePollView(input) {
+    this.showPollsList();
+  }
+
+  handlePollVote(input) {
+    if (!input || input.toUpperCase() === 'Q') {
+      this.showPollsList();
+      return;
+    }
+
+    const optionId = parseInt(input);
+    if (!isNaN(optionId)) {
+      const poll = this.stateData.currentPoll;
+      const options = db.polls.getOptions(poll.id);
+      const validOption = options.find(o => o.id === optionId);
+
+      if (validOption) {
+        db.polls.vote(poll.id, optionId, this.user.id);
+        this.write(`\r\n${ansi.brightGreen}    Vote recorded! Thank you for voting.${ansi.reset}\r\n\r\n`);
+        this.showPollView();
+        return;
+      }
+    }
+
+    this.write(`${ansi.brightRed}    Invalid option!${ansi.reset}\r\n`);
+    this.prompt('Choice: ');
+  }
+
+  // ─── MOTD ──────────────────────────────────────────────
+
+  showMotd(motdEntry) {
+    this.state = STATES.MOTD;
+    this.nodeManager.setActivity(this.nodeNum, 'Reading MOTD');
+
+    const r = ansi.reset;
+    const c = ansi.brightCyan;
+    const y = ansi.brightYellow;
+    const w = ansi.brightWhite;
+    const g = ansi.brightGreen;
+    const d = ansi.cyan;
+
+    let screen = `\r\n${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
+      `${d}    │${y}              ── Message of the Day ──                 ${d}│\r\n` +
+      `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
+
+    const lines = (motdEntry.body || '').split('\r\n');
+    for (const line of lines) {
+      screen += `${d}    │  ${w}${line.substring(0, 52).padEnd(52)}${d}│\r\n`;
+    }
+
+    screen += `${d}    │  ${g}                          - ${c}${(motdEntry.author || 'SysOp').padEnd(22)} ${d}│\r\n`;
+    screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
+    screen += ansi.pausePrompt;
+
+    this.write(screen);
   }
 
   // ─── GOODBYE ────────────────────────────────────────────
