@@ -22,7 +22,7 @@ VibeBBS brings back the magic of 1980s/90s BBSes — ANSI art, door games, messa
 - **ANSI Art UI** — Full-color retro interface with box drawing, gradients, and block art throughout
 - **Message Bases** — 5 threaded conferences with unread tracking and access control
 - **File Areas** — 4 download areas for sharing scripts, prompts, CLAUDE.md files, and ANSI art
-- **4 Door Games** — Two classic-inspired ports and two originals, all vibe-coding themed
+- **5 Door Games** — Including an AI Dungeon Master MUD powered by Claude
 - **SysOp Admin Panel** — Web-based dashboard for managing users, messages, bulletins, and nodes
 - **Persistent Storage** — SQLite database with scrypt-hashed passwords and call logging
 
@@ -31,6 +31,7 @@ VibeBBS brings back the magic of 1980s/90s BBSes — ANSI art, door games, messa
 ```bash
 git clone git@github.com:packetloss404/vibebbs.git
 cd vibebbs
+cp .env.example .env        # Add your ANTHROPIC_API_KEY for the AI Dungeon
 npm install
 npm start
 ```
@@ -136,6 +137,20 @@ Build an AI startup from $5,000 to IPO in 24 months. Hire engineers, buy compute
 
 Developer-themed hangman with 80 words across four categories: Programming Languages, Frameworks & Tools, Dev Concepts, and AI & Vibe Coding. Guess the word before your stack overflows (6 wrong = crash). Multi-round scoring with running win rate.
 
+### 🧠 Dungeon of the Vibe Lords
+*AI-Powered MUD — Claude is your Dungeon Master*
+
+A live AI-narrated dungeon crawl beneath the ruins of a crashed production server. Claude acts as your Dungeon Master, generating room descriptions, NPC dialogue, combat encounters, puzzles, and loot — all in real-time over a telnet terminal.
+
+**What makes it special:**
+- **Freeform input** — Type anything. "Search the corpse," "bribe the goblin," "cast a mass rollback on the corrupted database." Claude handles it all.
+- **Persistent characters** — Your adventure saves to the database. Log off, come back tomorrow, and the dungeon remembers you. Conversation history is preserved so Claude maintains narrative continuity.
+- **Full RPG mechanics** — HP, XP, gold, attack, defense, inventory, leveling with stat growth and full heals. Death is permanent (roguelike).
+- **Dev-themed world** — Rooms are server rooms, corrupted codebases, and haunted CI/CD pipelines. Monsters are race conditions, memory leaks, and hallucinating LLMs. Loot is mechanical keyboards and ancient documentation scrolls.
+- **Leaderboard** — Hall of Fame ranked by level, monsters slain, and deepest floor reached.
+
+Requires `ANTHROPIC_API_KEY` in `.env` (see `.env.example`). Without it, the dungeon entrance displays a "sealed" message.
+
 ## Admin Panel
 
 The SysOp admin panel is a web-based dashboard at `/admin` with a retro green-on-black terminal aesthetic.
@@ -150,7 +165,7 @@ Authentication requires SysOp credentials (access level ≥ 200).
 
 ## Configuration
 
-All settings live in `config.json`:
+BBS settings live in `config.json`, API keys in `.env`:
 
 ```json
 {
@@ -176,6 +191,12 @@ All settings live in `config.json`:
 | `newUserLevel` | 10 | Access level for new accounts |
 | `sysopLevel` | 255 | Maximum access level |
 
+**Environment variables** (`.env`):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | For Door 5 | Claude API key for the AI Dungeon Master |
+
 ## Database
 
 VibeBBS uses SQLite (stored at `data/vibebbs.db`, gitignored). The schema is auto-created on first run and includes:
@@ -186,6 +207,8 @@ VibeBBS uses SQLite (stored at `data/vibebbs.db`, gitignored). The schema is aut
 - **bulletins** — SysOp announcements with active/inactive toggle
 - **files** — File metadata with download counts
 - **call_log** — Login/logout history per node
+- **dungeon_players** — Persistent MUD character state (HP, inventory, level, room, stats)
+- **dungeon_history** — Conversation history with Claude for narrative continuity
 
 The default SysOp account and welcome content are seeded automatically on first launch.
 
@@ -200,6 +223,7 @@ The default SysOp account and welcome content are seeded automatically on first 
 | Web Terminal | xterm.js v5.5.0 |
 | Auth | scrypt (Node.js crypto) |
 | Protocol | Telnet (raw TCP) |
+| AI (Door 5) | Anthropic Claude API |
 
 ## Project Structure
 
@@ -207,6 +231,8 @@ The default SysOp account and welcome content are seeded automatically on first 
 vibebbs/
 ├── server.js                  # Entry point — starts all servers
 ├── config.json                # BBS configuration
+├── .env                       # API keys (gitignored)
+├── .env.example               # Template for .env
 ├── package.json
 ├── src/
 │   ├── core/
@@ -221,7 +247,8 @@ vibebbs/
 │   │   ├── door1.js           # Vibe Wars (trading game)
 │   │   ├── door2.js           # Prompt Quest (dungeon crawler)
 │   │   ├── door3.js           # Token Tycoon (startup sim)
-│   │   └── door4.js           # Stack Overflow (hangman)
+│   │   ├── door4.js           # Stack Overflow (hangman)
+│   │   └── door5.js           # Dungeon of the Vibe Lords (AI MUD)
 │   ├── admin/
 │   │   └── panel.js           # SysOp web admin panel
 │   └── web/

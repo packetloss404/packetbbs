@@ -63,7 +63,7 @@ class BBSSession {
 
   write(data) {
     try {
-      this.transport.write(data);
+      this.transport.write(ansi.normalizeOutput(data));
     } catch (e) {
       // Connection may have closed
     }
@@ -755,6 +755,8 @@ class BBSSession {
       `${d}    │  ${y}[${w}2${y}]${c} Prompt Quest        ${g}AI dungeon crawler          ${d}│\r\n` +
       `${d}    │  ${y}[${w}3${y}]${c} Token Tycoon        ${g}Build your AI empire       ${d}│\r\n` +
       `${d}    │  ${y}[${w}4${y}]${c} Stack Overflow      ${g}Classic Hangman, dev-style  ${d}│\r\n` +
+      `${d}    │  ${y}[${w}5${y}]${c} Dungeon of the      ${g}AI Dungeon Master MUD      ${d}│\r\n` +
+      `${d}    │      ${c} Vibe Lords         ${g}(Claude is your DM!)       ${d}│\r\n` +
       `${d}    │                                                      │\r\n` +
       `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
       `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
@@ -771,7 +773,7 @@ class BBSSession {
     }
 
     const doorNum = parseInt(cmd);
-    if (doorNum >= 1 && doorNum <= 4) {
+    if (doorNum >= 1 && doorNum <= 5) {
       this.launchDoor(doorNum);
     } else {
       this.write(`${ansi.brightRed}    Invalid selection!${ansi.reset}\r\n`);
@@ -780,7 +782,7 @@ class BBSSession {
   }
 
   launchDoor(doorNum) {
-    const doorNames = { 1: 'VibeWars', 2: 'PromptQuest', 3: 'TokenTycoon', 4: 'StackOverflow' };
+    const doorNames = { 1: 'VibeWars', 2: 'PromptQuest', 3: 'TokenTycoon', 4: 'StackOverflow', 5: 'DungeonOfTheVibeLords' };
     this.nodeManager.setActivity(this.nodeNum, `Playing ${doorNames[doorNum]}`);
 
     try {
