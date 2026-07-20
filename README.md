@@ -25,7 +25,7 @@ VibeBBS brings back the magic of 1980s/90s BBSes — ANSI art, door games, messa
 - **Polls & Voting Booth** — Interactive polls with one-vote-per-user enforcement (DB-level unique constraint) and results rendered as percentage ASCII bar charts
 - **Live Multi-Room Chat** — 3 chat rooms with real cross-node message relay scoped per room, join/leave announcements, and `/W` who's-here
 - **Graffiti Wall** — Tag the wall; usernames are ANSI-stripped before display
-- **4 Door Games** — Two classic-inspired ports and two originals, all vibe-coding themed, all complete with scoring and win/lose conditions
+- **5 Door Games** — Two classic-inspired ports, two originals, and an AI Dungeon Master MUD powered by Claude — all vibe-coding themed
 - **SysOp Tools** — MOTD-on-login, SysOp paging (blinking alert to every level-200+ node), who's-online, system stats, and a token-authenticated web admin dashboard
 - **File Areas** — 4 browsable catalog areas for scripts, prompts, CLAUDE.md files, and ANSI art (listing/catalog; transfer not yet wired)
 - **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 11 tables) with scrypt-hashed passwords and call logging
@@ -166,6 +166,21 @@ Build an AI startup from $5,000 to IPO in 24 months. Hire engineers, buy compute
 
 Developer-themed hangman with 80 words across four categories: Programming Languages, Frameworks & Tools, Dev Concepts, and AI & Vibe Coding. Guess the word before your stack overflows (6 wrong = crash). Multi-round scoring with running win rate.
 
+### 🧠 Dungeon of the Vibe Lords
+*AI-Powered MUD — Claude is your Dungeon Master*
+
+A live AI-narrated dungeon crawl beneath the ruins of a crashed production server. Claude acts as your Dungeon Master, generating room descriptions, NPC dialogue, combat encounters, puzzles, and loot — all in real-time over a telnet terminal.
+
+**What makes it special:**
+- **Freeform input** — Type anything. "Search the corpse," "bribe the goblin," "cast a mass rollback on the corrupted database." Claude handles it all.
+- **Persistent characters** — Your adventure saves to the database. Log off, come back tomorrow, and the dungeon remembers you. Conversation history is preserved so Claude maintains narrative continuity.
+- **Full RPG mechanics** — HP, XP, gold, attack, defense, inventory, leveling with stat growth and full heals. Death is permanent (roguelike).
+- **Dev-themed world** — Rooms are server rooms, corrupted codebases, and haunted CI/CD pipelines. Monsters are race conditions, memory leaks, and hallucinating LLMs. Loot is mechanical keyboards and ancient documentation scrolls.
+- **Leaderboard** — Hall of Fame ranked by level, monsters slain, and deepest floor reached.
+
+Requires `ANTHROPIC_API_KEY` in `.env` (see `.env.example`). Without it, the dungeon entrance displays a "sealed" message.
+
+
 ## Admin Panel
 
 The SysOp admin panel is a web-based single-file vanilla-JS SPA at `/admin` with a retro green-on-black terminal aesthetic, served by Express with token auth (`/admin/api/*` routes gated by a `requireAuth` middleware; login requires access level ≥ 200).
@@ -255,7 +270,8 @@ vibebbs/
 │   │   ├── door1.js           # Vibe Wars (trading game)
 │   │   ├── door2.js           # Prompt Quest (dungeon crawler)
 │   │   ├── door3.js           # Token Tycoon (startup sim)
-│   │   └── door4.js           # Stack Overflow (hangman)
+│   │   ├── door4.js           # Stack Overflow (hangman)
+│   │   └── door5.js           # Dungeon of the Vibe Lords (AI MUD)
 │   ├── admin/
 │   │   └── panel.js           # SysOp web admin panel (Express + embedded SPA)
 │   └── web/

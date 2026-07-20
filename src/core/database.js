@@ -143,6 +143,38 @@ function init() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS dungeon_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
+      hp INTEGER DEFAULT 30,
+      max_hp INTEGER DEFAULT 30,
+      level INTEGER DEFAULT 1,
+      xp INTEGER DEFAULT 0,
+      gold INTEGER DEFAULT 50,
+      attack INTEGER DEFAULT 5,
+      defense INTEGER DEFAULT 3,
+      room TEXT DEFAULT 'entrance_hall',
+      inventory TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'alive',
+      turns_played INTEGER DEFAULT 0,
+      monsters_slain INTEGER DEFAULT 0,
+      deepest_floor INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS dungeon_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dungeon_history_user ON dungeon_history(user_id, created_at);
+
     CREATE INDEX IF NOT EXISTS idx_messages_base ON messages(base_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_files_area ON files(area_id);
@@ -531,4 +563,68 @@ const motd = {
   },
 };
 
-module.exports = { init, users, messages, bulletins, callLog, files, graffiti, privateMail, polls, motd, hashPassword, verifyPassword };
+// Dungeon operations
+const dungeon = {
+  getPlayer(userId) {
+    return db.prepare('SELECT * FROM dungeon_players WHERE user_id = ?').get(userId);
+  },
+
+  createPlayer(userId) {
+    db.prepare(`
+      INSERT OR IGNORE INTO dungeon_players (user_id) VALUES (?)
+    `).run(userId);
+    return this.getPlayer(userId);
+  },
+
+  savePlayer(userId, data) {
+    const inventory = typeof data.inventory === 'string' ? data.inventory : JSON.stringify(data.inventory || []);
+    db.prepare(`
+      UPDATE dungeon_players SET
+        hp = ?, max_hp = ?, level = ?, xp = ?, gold = ?,
+        attack = ?, defense = ?, room = ?, inventory = ?,
+        status = ?, turns_played = ?, monsters_slain = ?,
+        deepest_floor = ?, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(
+      data.hp, data.max_hp, data.level, data.xp, data.gold,
+      data.attack, data.defense, data.room, inventory,
+      data.status, data.turns_played, data.monsters_slain,
+      data.deepest_floor, userId
+    );
+  },
+
+  deletePlayer(userId) {
+    db.prepare('DELETE FROM dungeon_players WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM dungeon_history WHERE user_id = ?').run(userId);
+  },
+
+  getHistory(userId, limit = 20) {
+    return db.prepare(
+      'SELECT role, content FROM dungeon_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?'
+    ).all(userId, limit).reverse();
+  },
+
+  addHistory(userId, role, content) {
+    db.prepare(
+      'INSERT INTO dungeon_history (user_id, role, content) VALUES (?, ?, ?)'
+    ).run(userId, role, content);
+    // Keep only last 40 messages to manage context window
+    db.prepare(`
+      DELETE FROM dungeon_history WHERE user_id = ? AND id NOT IN (
+        SELECT id FROM dungeon_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 40
+      )
+    `).run(userId, userId);
+  },
+
+  getLeaderboard(limit = 10) {
+    return db.prepare(`
+      SELECT dp.*, u.username FROM dungeon_players dp
+      JOIN users u ON dp.user_id = u.id
+      WHERE dp.status != 'dead'
+      ORDER BY dp.level DESC, dp.xp DESC, dp.monsters_slain DESC
+      LIMIT ?
+    `).all(limit);
+  }
+};
+
+module.exports = { init, users, messages, bulletins, callLog, files, graffiti, privateMail, polls, motd, dungeon, hashPassword, verifyPassword };
