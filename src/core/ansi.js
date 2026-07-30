@@ -1,4 +1,6 @@
-// ANSI escape code utilities and art for VibeBBS
+// ANSI escape code utilities and art for PacketBBS
+
+const { version } = require('../../package.json');
 
 const ESC = '\x1b';
 const CSI = `${ESC}[`;
@@ -157,16 +159,17 @@ ansi.art.welcome = () => {
 
   return ansi.clear +
 `${d}
-${c}    ██╗   ██╗${m}██╗${y}██████╗ ${g}███████╗${w}██████╗ ${c}██████╗ ${m}███████╗
-${c}    ██║   ██║${m}██║${y}██╔══██╗${g}██╔════╝${w}██╔══██╗${c}██╔══██╗${m}██╔════╝
-${c}    ██║   ██║${m}██║${y}██████╔╝${g}█████╗  ${w}██████╔╝${c}██████╔╝${m}███████╗
-${c}    ╚██╗ ██╔╝${m}██║${y}██╔══██╗${g}██╔══╝  ${w}██╔══██╗${c}██╔══██╗${m}╚════██║
-${c}     ╚████╔╝ ${m}██║${y}██████╔╝${g}███████╗${w}██████╔╝${c}██████╔╝${m}███████║
-${c}      ╚═══╝  ${m}╚═╝${y}╚═════╝ ${g}╚══════╝${w}╚═════╝ ${c}╚═════╝ ${m}╚══════╝
+${c}    ██████╗  █████╗  ██████╗██╗  ██╗███████╗████████╗
+${m}    ██╔══██╗██╔══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝
+${y}    ██████╔╝███████║██║     █████╔╝ █████╗     ██║
+${g}    ██╔═══╝ ██╔══██║██║     ██╔═██╗ ██╔══╝     ██║
+${w}    ██║     ██║  ██║╚██████╗██║  ██╗███████╗   ██║
+${c}    ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝
+${m}                         B B S
 ${r}
 ${d}    ┌──────────────────────────────────────────────────────┐
-${d}    │  ${w}A Bulletin Board System for the Vibe Coding Era   ${d}  │
-${d}    │  ${dm}Where retro meets the future of AI-assisted code ${d}  │
+${d}    │  ${w}${'PacketBBS: a community for builders & callers'.padEnd(50)}${d}  │
+${d}    │  ${dm}${'Messages, files, doors, and one very neon annex'.padEnd(50)}${d}  │
 ${d}    └──────────────────────────────────────────────────────┘
 ${r}
 ${y}    ═══════════════════════════════════════════════════════${r}
@@ -199,9 +202,8 @@ ansi.art.mainMenu = (username, nodeName, callCount) => {
 
   return ansi.clear +
 `${d}    ┌──────────────────────────────────────────────────────┐
-${d}    │${c}  ▄   ▄ ${m}▄▄▄ ${y}█▀▀▄ ${g}█▀▀  ${w}█▀▀▄ ${c}█▀▀▄ ${m}▄▀▀▀  ${d}                │
-${d}    │${c}  █   █ ${m} █  ${y}█▀▀▄ ${g}█▀▀  ${w}█▀▀▄ ${c}█▀▀▄ ${m}▀▀▀█  ${d}  ${w}Main Menu   ${d}  │
-${d}    │${c}   ▀▄▀  ${m}▄█▄ ${y}▀▀▀  ${g}▀▀▀▀ ${w}▀▀▀  ${c}▀▀▀  ${m}▀▀▀   ${d}                │
+${d}    │${c}  █▀█ ${m}█▀█ ${y}█▀▀ ${g}█▄▀ ${w}█▀▀ ${c}▀█▀   ${m}█▄▄ ${y}█▄▄ ${g}█▀  ${d}            │
+${d}    │${c}  █▀▀ ${m}█▀█ ${y}█▄▄ ${g}█ █ ${w}██▄ ${c} █    ${m}█▄█ ${y}█▄█ ${g}▄█  ${d} ${w}Main Menu  ${d}│
 ${d}    ├──────────────────────────────────────────────────────┤
 ${d}    │  ${g}User: ${w}${(username || '').padEnd(18)}${d}  ${g}Node: ${w}${(nodeName || '').padEnd(5)}${d}  ${g}Calls: ${w}${String(callCount || 0).padEnd(5)}${d} │
 ${d}    ├──────────────────────────────────────────────────────┤
@@ -226,6 +228,7 @@ ansi.art.messageBases = (bases) => {
   const w = ansi.brightWhite;
   const g = ansi.brightGreen;
   const d = ansi.cyan;
+  const m = ansi.brightMagenta;
 
   let screen = ansi.clear +
 `${d}    ┌──────────────────────────────────────────────────────┐
@@ -236,10 +239,14 @@ ${d}    ├───────────────────────
 ${d}    │  ${y}#   ${w}Conference Name              ${g}Messages   New    ${d}│
 ${d}    ├──────────────────────────────────────────────────────┤\r\n`;
 
-  const m = ansi.brightMagenta;
-
   if (bases && bases.length > 0) {
+    let currentSection = null;
     for (const base of bases) {
+      if (base.section && base.section !== currentSection) {
+        currentSection = base.section;
+        const section = currentSection.toUpperCase().substring(0, 50).padEnd(50);
+        screen += `${d}    │  ${m}${section}${d}  │\r\n`;
+      }
       const num = String(base.id).padEnd(4);
       const name = (base.name || '').padEnd(28);
       const total = String(base.totalMessages || 0).padStart(6);
@@ -293,7 +300,7 @@ ${c}    ║  ${y}  █  ██ █   █  █   █     █   █  ██   █�
 ${c}    ║  ${y}  █   █ █   █  █   █      █ █   ██   █    █ █      ${c}║
 ${c}    ║  ${y}  ████  █████  █████       █   ████  ██████ █████  ${c}║
 ${c}    ║                                                      ║
-${c}    ║  ${m}Thanks for visiting VibeBBS! Keep vibing! ${w}✦        ${c}║
+${c}    ║  ${m}Thanks for calling PacketBBS. Stay curious! ${w}✦       ${c}║
 ${c}    ║  ${w}Your session has been logged. Call again soon!     ${c}║
 ${c}    ║                                                      ║
 ${c}    ╚══════════════════════════════════════════════════════╝${r}
@@ -349,7 +356,7 @@ ${d}    │  ${y}Total Messages:  ${w}${String(stats.totalMessages || 0).padStar
 ${d}    │  ${y}Total Calls:     ${w}${String(stats.totalCalls || 0).padStart(8)}                         ${d}│
 ${d}    │  ${y}Nodes Online:    ${w}${String(stats.nodesOnline || 0).padStart(8)}                         ${d}│
 ${d}    │  ${y}Max Nodes:       ${w}${String(stats.maxNodes || 0).padStart(8)}                         ${d}│
-${d}    │  ${y}BBS Version:     ${w}${'   1.0.0'}                         ${d}│
+${d}    │  ${y}BBS Version:     ${w}${String(version).padStart(8)}                         ${d}│
 ${d}    │  ${y}Uptime:          ${w}${(stats.uptime || 'N/A').padStart(8)}                         ${d}│
 ${d}    └──────────────────────────────────────────────────────┘${r}
 ${ansi.pausePrompt}`;
