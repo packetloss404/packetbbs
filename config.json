@@ -1,26 +1,26 @@
 {
-  "bbsName": "VibeBBS",
+  "bbsName": "PacketBBS",
   "sysopName": "SysOp",
-  "sysopEmail": "sysop@vibebbs.local",
+  "sysopEmail": "sysop@packetbbs.local",
   "telnetPort": 2323,
   "webPort": 8088,
   "maxNodes": 16,
   "newUserLevel": 10,
   "sysopLevel": 255,
   "allowNewUsers": true,
-  "defaultTheme": "vibe",
+  "defaultTheme": "packet",
   "idleTimeout": 300,
   "messageBases": [
-    { "id": 1, "name": "General Discussion", "description": "Chat about anything and everything", "accessLevel": 10 },
-    { "id": 2, "name": "Vibe Coding", "description": "Share your vibe coding sessions & tips", "accessLevel": 10 },
-    { "id": 3, "name": "Show & Tell", "description": "Show off what you built with AI", "accessLevel": 10 },
-    { "id": 4, "name": "Prompt Engineering", "description": "Discuss prompts, CLAUDE.md files, and workflows", "accessLevel": 10 },
-    { "id": 5, "name": "SysOp Corner", "description": "System administration discussion", "accessLevel": 200 }
+    { "id": 1, "name": "General Discussion", "description": "Chat about anything and everything", "section": "PacketBBS Boards", "accessLevel": 10 },
+    { "id": 3, "name": "Show & Tell", "description": "Share projects, experiments, art, and hardware", "section": "PacketBBS Boards", "accessLevel": 10 },
+    { "id": 2, "name": "Vibe Coding", "description": "Swap notes on AI-assisted building and experiments", "section": "Vibe Sub-BBS", "accessLevel": 10 },
+    { "id": 4, "name": "AI Workflows", "description": "Discuss agents, prompts, context files, and tools", "section": "Vibe Sub-BBS", "accessLevel": 10 },
+    { "id": 5, "name": "SysOp Corner", "description": "System administration discussion", "section": "System", "accessLevel": 200 }
   ],
   "fileAreas": [
     { "id": 1, "name": "Scripts & Tools", "description": "Useful scripts and utilities", "path": "files/scripts", "accessLevel": 10 },
-    { "id": 2, "name": "CLAUDE.md Collection", "description": "Curated CLAUDE.md files", "path": "files/claudemd", "accessLevel": 10 },
-    { "id": 3, "name": "Prompt Libraries", "description": "Prompt collections and templates", "path": "files/prompts", "accessLevel": 10 },
+    { "id": 2, "name": "Agent Context Files", "description": "Project instructions and reusable context files", "path": "files/claudemd", "accessLevel": 10 },
+    { "id": 3, "name": "Automation Recipes", "description": "Prompts, workflows, and reusable templates", "path": "files/prompts", "accessLevel": 10 },
     { "id": 4, "name": "ANSI Art", "description": "ANSI art files and packs", "path": "files/ansi", "accessLevel": 10 }
   ]
 }

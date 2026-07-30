@@ -1,4 +1,4 @@
-// WebSocket server for VibeBBS (browser terminal access)
+// WebSocket server for PacketBBS (browser terminal access)
 const { WebSocketServer } = require('ws');
 const BBSSession = require('../core/bbs');
 

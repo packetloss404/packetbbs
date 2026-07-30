@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 // STACK OVERFLOW - Developer Hangman
-// (Classic Hangman with a dev twist for VibeBBS)
+// (Classic Hangman with a dev twist for PacketBBS)
 // Guess programming terms, framework names, and dev jargon
 // before your stack overflows!
 // ═══════════════════════════════════════════════════════════

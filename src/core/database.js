@@ -1,8 +1,62 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, '..', '..', 'data', 'vibebbs.db');
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
+const DEFAULT_DB_PATH = path.join(PROJECT_ROOT, 'data', 'packetbbs.db');
+const LEGACY_DB_PATH = path.join(PROJECT_ROOT, 'data', 'vibebbs.db');
+
+function resolveDatabasePath() {
+  if (process.env.PACKETBBS_DB_PATH) {
+    return path.resolve(PROJECT_ROOT, process.env.PACKETBBS_DB_PATH);
+  }
+  if (fs.existsSync(DEFAULT_DB_PATH) || !fs.existsSync(LEGACY_DB_PATH)) {
+    return DEFAULT_DB_PATH;
+  }
+  return LEGACY_DB_PATH;
+}
+
+const DB_PATH = resolveDatabasePath();
+
+const seedContent = {
+  legacy: {
+    bulletinTitle: 'Welcome to VibeBBS!',
+    bulletinBody: 'Welcome to VibeBBS, the bulletin board system for vibe coders!\r\n\r\n' +
+      'This is a place where retro meets the future. Share your AI-assisted\r\n' +
+      'coding projects, swap prompts, play door games, and connect with\r\n' +
+      'fellow vibe coders.\r\n\r\n' +
+      'Check out the Message Bases to start chatting, or hit up the Door\r\n' +
+      'Games for some classic fun.\r\n\r\n' +
+      'Keep vibing! - SysOp',
+    messageSubject: 'Welcome to VibeBBS!',
+    messageBody: 'Welcome to VibeBBS! This is the General Discussion area.\r\n' +
+      'Feel free to introduce yourself and start chatting.\r\n\r\n' +
+      'Remember: Be excellent to each other!',
+    motdBody: 'Welcome to VibeBBS! Check out the Message Bases, play some Door Games,\r\n' +
+      'and leave your mark on the Graffiti Wall. New features added regularly!\r\n' +
+      '\r\n' +
+      'Remember: Be excellent to each other. Keep vibing!',
+    graffitiMessage: 'First! Welcome to VibeBBS - leave your mark here!',
+  },
+  current: {
+    bulletinTitle: 'Welcome to PacketBBS!',
+    bulletinBody: 'Welcome to PacketBBS, a terminal community for builders and curious minds!\r\n\r\n' +
+      'This is where retro BBS culture meets modern projects. Share what you are\r\n' +
+      'building, swap tools and workflows, play door games, and meet callers.\r\n\r\n' +
+      'The Vibe Sub-BBS keeps the AI-assisted experiments glowing without\r\n' +
+      'defining the whole board. Find it inside the Message Bases.\r\n\r\n' +
+      'Dial in. Drop a packet. Stay awhile. - SysOp',
+    messageSubject: 'Welcome to PacketBBS!',
+    messageBody: 'Welcome to PacketBBS! This is the General Discussion board.\r\n' +
+      'Introduce yourself, share what you are building, or start a conversation.\r\n\r\n' +
+      'Remember: Be excellent to each other!',
+    motdBody: 'Welcome to PacketBBS! Browse the boards, play some Door Games,\r\n' +
+      'and leave your mark on the Graffiti Wall.\r\n\r\n' +
+      'Dial in. Drop a packet. Stay awhile.',
+    graffitiMessage: 'First! Welcome to PacketBBS - leave your mark here!',
+  },
+};
 
 let db;
 
@@ -182,6 +236,8 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id);
   `);
 
+  migrateLegacySeedContent();
+
   // Seed default sysop user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
@@ -196,14 +252,8 @@ function init() {
       INSERT INTO bulletins (title, body, author)
       VALUES (?, ?, ?)
     `).run(
-      'Welcome to VibeBBS!',
-      'Welcome to VibeBBS, the bulletin board system for vibe coders!\r\n\r\n' +
-      'This is a place where retro meets the future. Share your AI-assisted\r\n' +
-      'coding projects, swap prompts, play door games, and connect with\r\n' +
-      'fellow vibe coders.\r\n\r\n' +
-      'Check out the Message Bases to start chatting, or hit up the Door\r\n' +
-      'Games for some classic fun.\r\n\r\n' +
-      'Keep vibing! - SysOp',
+      seedContent.current.bulletinTitle,
+      seedContent.current.bulletinBody,
       'SysOp'
     );
 
@@ -211,19 +261,13 @@ function init() {
     db.prepare(`
       INSERT INTO messages (base_id, from_user, to_user, subject, body)
       VALUES (?, ?, ?, ?, ?)
-    `).run(1, 'SysOp', 'All', 'Welcome to VibeBBS!',
-      'Welcome to VibeBBS! This is the General Discussion area.\r\n' +
-      'Feel free to introduce yourself and start chatting.\r\n\r\n' +
-      'Remember: Be excellent to each other!');
+    `).run(1, 'SysOp', 'All', seedContent.current.messageSubject, seedContent.current.messageBody);
 
     // Seed MOTD
     db.prepare(`
       INSERT INTO motd (body, author) VALUES (?, ?)
     `).run(
-      'Welcome to VibeBBS! Check out the Message Bases, play some Door Games,\r\n' +
-      'and leave your mark on the Graffiti Wall. New features added regularly!\r\n' +
-      '\r\n' +
-      'Remember: Be excellent to each other. Keep vibing!',
+      seedContent.current.motdBody,
       'SysOp'
     );
 
@@ -238,7 +282,7 @@ function init() {
     }
 
     // Seed graffiti wall
-    db.prepare('INSERT INTO graffiti (username, message) VALUES (?, ?)').run('SysOp', 'First! Welcome to VibeBBS - leave your mark here!');
+    db.prepare('INSERT INTO graffiti (username, message) VALUES (?, ?)').run('SysOp', seedContent.current.graffitiMessage);
 
     db.prepare(`
       INSERT INTO messages (base_id, from_user, to_user, subject, body)
@@ -252,6 +296,34 @@ function init() {
   }
 
   return db;
+}
+
+function migrateLegacySeedContent() {
+  const legacy = seedContent.legacy;
+  const current = seedContent.current;
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE bulletins SET title = ?, body = ?
+      WHERE author = 'SysOp' AND title = ? AND body = ?
+    `).run(current.bulletinTitle, current.bulletinBody, legacy.bulletinTitle, legacy.bulletinBody);
+
+    db.prepare(`
+      UPDATE messages SET subject = ?, body = ?
+      WHERE base_id = 1 AND from_user = 'SysOp' AND to_user = 'All'
+        AND subject = ? AND body = ?
+    `).run(current.messageSubject, current.messageBody, legacy.messageSubject, legacy.messageBody);
+
+    db.prepare(`
+      UPDATE motd SET body = ?
+      WHERE author = 'SysOp' AND body = ?
+    `).run(current.motdBody, legacy.motdBody);
+
+    db.prepare(`
+      UPDATE graffiti SET message = ?
+      WHERE username = 'SysOp' AND message = ?
+    `).run(current.graffitiMessage, legacy.graffitiMessage);
+  })();
 }
 
 // User operations
@@ -627,4 +699,19 @@ const dungeon = {
   }
 };
 
-module.exports = { init, users, messages, bulletins, callLog, files, graffiti, privateMail, polls, motd, dungeon, hashPassword, verifyPassword };
+module.exports = {
+  init,
+  users,
+  messages,
+  bulletins,
+  callLog,
+  files,
+  graffiti,
+  privateMail,
+  polls,
+  motd,
+  dungeon,
+  hashPassword,
+  verifyPassword,
+  resolveDatabasePath,
+};

@@ -1,4 +1,4 @@
-// Multi-node manager for VibeBBS
+// Multi-node manager for PacketBBS
 // Tracks all active connections/nodes
 
 class NodeManager {

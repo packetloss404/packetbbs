@@ -1,4 +1,4 @@
-// Telnet server for VibeBBS
+// Telnet server for PacketBBS
 const net = require('net');
 const BBSSession = require('../core/bbs');
 

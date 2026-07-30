@@ -1,17 +1,33 @@
-# VibeBBS
+# PacketBBS
 
 ```
-██╗   ██╗██╗██████╗ ███████╗██████╗ ██████╗ ███████╗
-██║   ██║██║██╔══██╗██╔════╝██╔══██╗██╔══██╗██╔════╝
-██║   ██║██║██████╔╝█████╗  ██████╔╝██████╔╝███████╗
-╚██╗ ██╔╝██║██╔══██╗██╔══╝  ██╔══██╗██╔══██╗╚════██║
- ╚████╔╝ ██║██████╔╝███████╗██████╔╝██████╔╝███████║
-  ╚═══╝  ╚═╝╚═════╝ ╚══════╝╚═════╝ ╚═════╝ ╚══════╝
+██████╗  █████╗  ██████╗██╗  ██╗███████╗████████╗
+██╔══██╗██╔══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝
+██████╔╝███████║██║     █████╔╝ █████╗     ██║
+██╔═══╝ ██╔══██║██║     ██╔═██╗ ██╔══╝     ██║
+██║     ██║  ██║╚██████╗██║  ██╗███████╗   ██║
+╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝  BBS
 ```
 
-**A retro Bulletin Board System for the Vibe Coding era.**
+**A community BBS for builders, tinkerers, and curious minds.**
 
-VibeBBS brings back the magic of 1980s/90s BBSes — ANSI art, door games, message bases, private mail, polls, a graffiti wall — with a modern hybrid architecture. Connect via Telnet for the authentic experience or through your browser with a full terminal emulator. Both transports feed one shared session engine, so 16 nodes across both protocols see each other in real time. Built for the vibe coding community.
+PacketBBS brings back the magic of 1980s/90s bulletin boards—ANSI art, door games, message bases, private mail, polls, and a graffiti wall—with a modern hybrid architecture. Connect by Telnet for the authentic experience or use the browser terminal. Both transports feed one shared session engine, so callers across 16 nodes see each other in real time.
+
+The original vibe-coding personality still has a home. The **Vibe Sub-BBS** is a deliberately neon corner of the message network, joined by the Vibe Lounge and two named door worlds. It is part of PacketBBS, not the premise of the whole system.
+
+## Direction
+
+PacketBBS is evolving toward a local-first community node inspired by the best interaction patterns of early- and late-1990s BBS systems:
+
+- A caller loop centered on mail waiting, subscribed-conference newscans, new files, callers, doors, and deliberate logoff
+- Clear separation between local E-Mail, local conferences, shared PacketNet echoes, routed NetMail, and external NetNews
+- Offline **Packet Briefcase** and QWK/REP workflows for reading and replying away from the live connection
+- Curated file libraries, daily-turn doors, compact caller profiles, last-callers lists, and other small features that make a community feel inhabited
+- Authenticated store-and-forward federation only after local threading, unread state, moderation, and delivery queues are reliable
+
+The current repository still labels the neon section **Vibe Sub-BBS**. The proposed next information architecture calls it **Vibe Community**, retaining its boards and doors while PacketBBS becomes the broader system identity.
+
+The complete research, architectural proposal, migration constraints, risks, and phased review checklist live in **[HANDOFF.md](HANDOFF.md)**. Items in that document are proposed work unless they are also listed as implemented features below.
 
 ---
 
@@ -25,16 +41,27 @@ VibeBBS brings back the magic of 1980s/90s BBSes — ANSI art, door games, messa
 - **Polls & Voting Booth** — Interactive polls with one-vote-per-user enforcement (DB-level unique constraint) and results rendered as percentage ASCII bar charts
 - **Live Multi-Room Chat** — 3 chat rooms with real cross-node message relay scoped per room, join/leave announcements, and `/W` who's-here
 - **Graffiti Wall** — Tag the wall; usernames are ANSI-stripped before display
-- **5 Door Games** — Two classic-inspired ports, two originals, and an AI Dungeon Master MUD powered by Claude — all vibe-coding themed
+- **Vibe Sub-BBS** — A grouped set of boards for AI-assisted building, agents, prompts, and experimental workflows
+- **5 Door Games** — Two classic-inspired ports, two originals, and an AI Dungeon Master MUD powered by Claude
 - **SysOp Tools** — MOTD-on-login, SysOp paging (blinking alert to every level-200+ node), who's-online, system stats, and a token-authenticated web admin dashboard
-- **File Areas** — 4 browsable catalog areas for scripts, prompts, CLAUDE.md files, and ANSI art (listing/catalog; transfer not yet wired)
-- **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 11 tables) with scrypt-hashed passwords and call logging
+- **File Areas** — 4 browsable catalog areas for scripts, context files, automation recipes, and ANSI art (listing/catalog; transfer not yet wired)
+- **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 14 tables) with scrypt-hashed passwords and call logging
+
+## Roadmap Summary
+
+1. **Caller loop and reader correctness** — reliable newscan, subscriptions, high-water pointers, catch-up, quoted replies, last callers, and a “what is new” logon summary
+2. **Message and E-Mail foundation** — stable global IDs, real thread metadata, database-backed areas, Inbox/Sent/Saved/Drafts, moderation, and personal filters
+3. **Offline packets and file libraries** — Packet Briefcase, QWK/REP, search, extended file descriptions, batch downloads, and upload quarantine
+4. **PacketNet lab** — signed node identities, scheduled mail runs, trusted hub fan-out, retries, deduplication, path display, and moderation
+5. **Compatibility adapters** — authenticated NNTP, optional FTN/FidoNet support, and carefully allowlisted external sources
+
+See [HANDOFF.md](HANDOFF.md) for acceptance criteria and protocol references.
 
 ## Quick Start
 
 ```bash
-git clone git@github.com:packetloss404/vibebbs.git
-cd vibebbs
+git clone git@github.com:packetloss404/packetbbs.git
+cd packetbbs
 npm install
 npm start
 ```
@@ -51,12 +78,12 @@ Then connect:
 
 ## Screenshots (What You'll See)
 
-VibeBBS renders entirely in ANSI art. Here's what the flow looks like:
+PacketBBS renders the caller experience entirely in ANSI art. Here's what the flow looks like:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  A Bulletin Board System for the Vibe Coding Era     │
-│  Where retro meets the future of AI-assisted code    │
+│  A community BBS for builders and curious minds      │
+│  Messages, files, doors, and one very neon annex     │
 └──────────────────────────────────────────────────────┘
 
     Enter your credentials below
@@ -70,12 +97,12 @@ The main menu provides access to all BBS functions:
 ```
 ┌──────────────────────────────────────────────────────┐
 │  [M] Message Bases        [E] Private Mail           │
-│  [F] File Areas           [V] Polls / Voting Booth   │
-│  [D] Door Games           [R] Graffiti Wall          │
-│  [B] Bulletins            [W] Who's Online           │
-│  [C] Chat Rooms           [U] User Settings          │
-│  [P] Page SysOp           [S] System Stats           │
-│                           [G] Goodbye / Logoff       │
+│  [F] File Areas           [P] Page SysOp             │
+│  [D] Door Games           [S] System Stats           │
+│  [B] Bulletins            [V] Voting Booths          │
+│  [C] Chat Rooms           [R] Graffiti Wall          │
+│  [W] Who's Online         [U] User Settings          │
+│  [G] Goodbye / Logoff                                │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -104,12 +131,14 @@ Both Telnet and WebSocket connections construct the same `BBSSession` over a tin
 | # | Conference | Description | Access |
 |---|-----------|-------------|--------|
 | 1 | General Discussion | Chat about anything and everything | All users |
-| 2 | Vibe Coding | Share your vibe coding sessions & tips | All users |
-| 3 | Show & Tell | Show off what you built with AI | All users |
-| 4 | Prompt Engineering | Discuss prompts, CLAUDE.md files, and workflows | All users |
+| 3 | Show & Tell | Share projects, experiments, art, and hardware | All users |
+| 2 | Vibe Coding | Swap notes on AI-assisted building and experiments | All users |
+| 4 | AI Workflows | Discuss agents, prompts, context files, and tools | All users |
 | 5 | SysOp Corner | System administration discussion | SysOp only |
 
 Messages support threading (replies), per-user read tracking via the `message_read` join table, access-level gating per conference, and writing with `/S` to save and `/A` to abort.
+
+The message menu renders section headings from `config.json`. General Discussion and Show & Tell form the main PacketBBS boards; Vibe Coding and AI Workflows form the Vibe Sub-BBS; SysOp Corner remains a restricted system board. Numeric IDs are intentionally stable so existing posts do not need a data migration.
 
 ## Private Mail
 
@@ -138,13 +167,15 @@ An interactive voting subsystem (`polls`, `poll_options`, `poll_votes` tables):
 | # | Area | Description |
 |---|------|-------------|
 | 1 | Scripts & Tools | Useful scripts and utilities |
-| 2 | CLAUDE.md Collection | Curated CLAUDE.md files |
-| 3 | Prompt Libraries | Prompt collections and templates |
+| 2 | Agent Context Files | Project instructions and reusable context files |
+| 3 | Automation Recipes | Prompts, workflows, and reusable templates |
 | 4 | ANSI Art | ANSI art files and packs |
 
 > Note: file areas are browsable catalogs (listing + metadata). Actual upload/download transfer is not yet wired.
 
 ## Door Games
+
+Prompt Quest, Token Tycoon, and Stack Overflow sit in the general arcade. Vibe Wars and Dungeon of the Vibe Lords retain their names as part of the Vibe corner's personality.
 
 ### 🚀 Vibe Wars
 *Inspired by TradeWars 2002*
@@ -197,7 +228,7 @@ All settings live in `config.json`:
 
 ```json
 {
-  "bbsName": "VibeBBS",
+  "bbsName": "PacketBBS",
   "sysopName": "SysOp",
   "telnetPort": 2323,
   "webPort": 8088,
@@ -221,7 +252,9 @@ All settings live in `config.json`:
 
 ## Database
 
-VibeBBS uses SQLite (better-sqlite3 in WAL mode, stored at `data/vibebbs.db`, gitignored). The 11-table schema is auto-created and seeded on first run via namespaced CRUD modules over prepared statements:
+PacketBBS uses SQLite through better-sqlite3 in WAL mode. New installations use `data/packetbbs.db`; when only an existing `data/vibebbs.db` is present, PacketBBS continues using it in place so the rename cannot strand caller data. `PACKETBBS_DB_PATH` can explicitly select another location.
+
+The 14-table schema is created incrementally on startup and seeded on a brand-new board via namespaced CRUD modules over prepared statements:
 
 - **users** — Accounts with scrypt-hashed passwords (per-user salt), access levels, and stats
 - **messages** — Threaded messages organized by conference
@@ -233,6 +266,7 @@ VibeBBS uses SQLite (better-sqlite3 in WAL mode, stored at `data/vibebbs.db`, gi
 - **private_mail** — Person-to-person mail with read/unread state
 - **polls**, **poll_options**, **poll_votes** — Polls, their choices, and one-vote-per-user records
 - **motd** — Message of the day shown on login
+- **dungeon_players**, **dungeon_history** — Persistent character state and AI-dungeon context
 
 The default SysOp account, welcome content, a sample poll, MOTD, and starter graffiti are seeded automatically on first launch.
 
@@ -248,12 +282,12 @@ The default SysOp account, welcome content, a sample poll, MOTD, and starter gra
 | Auth | scrypt (Node.js crypto) |
 | Protocol | Telnet (raw TCP via `net`) |
 
-Three runtime dependencies, zero build step.
+Five runtime dependencies, zero build step.
 
 ## Project Structure
 
 ```
-vibebbs/
+packetbbs/
 ├── server.js                  # Entry point — starts all servers
 ├── config.json                # BBS configuration
 ├── package.json
@@ -261,7 +295,7 @@ vibebbs/
 │   ├── core/
 │   │   ├── ansi.js            # ANSI escape codes & art screens
 │   │   ├── bbs.js             # Session state machine (~40 states)
-│   │   └── database.js        # SQLite schema & CRUD (11 tables)
+│   │   └── database.js        # SQLite schema & CRUD (14 tables)
 │   ├── server/
 │   │   ├── telnet.js          # Telnet server (raw TCP + IAC)
 │   │   ├── websocket.js       # WebSocket server
@@ -276,6 +310,7 @@ vibebbs/
 │   │   └── panel.js           # SysOp web admin panel (Express + embedded SPA)
 │   └── web/
 │       └── index.html         # Browser terminal (xterm.js)
+├── test/                       # Node.js smoke and migration tests
 └── data/                      # SQLite database (gitignored)
 ```
 
@@ -285,4 +320,4 @@ MIT
 
 ---
 
-*Built with vibes by [packetloss404](https://github.com/packetloss404). Keep vibing.*
+*Built by [packetloss404](https://github.com/packetloss404). Dial in. Drop a packet. Stay awhile.*

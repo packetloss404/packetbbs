@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-//  VibeBBS - A Bulletin Board System for the Vibe Coding Era
+//  PacketBBS - A modern BBS with a retro terminal soul
 //  Hybrid Telnet + Web Terminal | Multi-Node | Persistent
 // ═══════════════════════════════════════════════════════════
 
@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const config = require('./config.json');
+const { version } = require('./package.json');
 const db = require('./src/core/database');
 const NodeManager = require('./src/server/node-manager');
 const { createTelnetServer } = require('./src/server/telnet');
@@ -57,14 +58,8 @@ const startTime = Date.now();
 telnetServer.listen(config.telnetPort, () => {
   console.log('');
   console.log('  ╔══════════════════════════════════════════════════╗');
-  console.log('  ║                                                  ║');
-  console.log('  ║   ██╗   ██╗██╗██████╗ ███████╗██████╗ ██████╗   ║');
-  console.log('  ║   ██║   ██║██║██╔══██╗██╔════╝██╔══██╗██╔═══╝   ║');
-  console.log('  ║   ╚██╗ ██╔╝██║██████╔╝█████╗  ██████╔╝╚████╗   ║');
-  console.log('  ║    ╚████╔╝ ██║██╔══██╗██╔══╝  ██╔══██╗ ╚═══██╗ ║');
-  console.log('  ║     ╚██╔╝  ██║██████╔╝███████╗██████╔╝██████╔╝  ║');
-  console.log('  ║      ╚═╝   ╚═╝╚═════╝ ╚══════╝╚═════╝ ╚═════╝  ║');
-  console.log('  ║                                                  ║');
+  console.log('  ║                    PACKETBBS                     ║');
+  console.log('  ║          DIAL IN · DROP A PACKET · STAY          ║');
   console.log('  ╚══════════════════════════════════════════════════╝');
   console.log('');
   console.log(`  Telnet server listening on port ${config.telnetPort}`);
@@ -79,20 +74,20 @@ httpServer.listen(config.webPort, () => {
   console.log(`  SysOp: ${config.sysopName}`);
   console.log(`  Default user: SysOp / sysop`);
   console.log('');
-  console.log('  VibeBBS is online. Keep vibing!');
+  console.log(`  ${config.bbsName} v${version} is online. Stay curious!`);
   console.log('');
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n  Shutting down VibeBBS...');
+  console.log(`\n  Shutting down ${config.bbsName}...`);
   telnetServer.close();
   httpServer.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n  Shutting down VibeBBS...');
+  console.log(`\n  Shutting down ${config.bbsName}...`);
   telnetServer.close();
   httpServer.close();
   process.exit(0);

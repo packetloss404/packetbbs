@@ -1,4 +1,4 @@
-// SysOp Admin Panel - Web-based administration for VibeBBS
+// SysOp Admin Panel - Web-based administration for PacketBBS
 const express = require('express');
 const db = require('../core/database');
 
@@ -121,17 +121,22 @@ function setupAdminPanel(app, nodeManager, config) {
 
   // ─── Admin Panel HTML ───
   app.get('/admin', (req, res) => {
-    res.send(getAdminHTML());
+    res.send(getAdminHTML(config));
   });
 }
 
-function getAdminHTML() {
+function getAdminHTML(config) {
+  const bbsName = config.bbsName || 'PacketBBS';
+  const messageBases = JSON.stringify(
+    config.messageBases.map(({ id, name, section }) => ({ id, name, section }))
+  );
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VibeBBS SysOp Panel</title>
+  <title>${bbsName} SysOp Panel</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -205,7 +210,7 @@ function getAdminHTML() {
 <body>
 
 <div class="login-screen" id="loginScreen">
-  <h1>VibeBBS SysOp Panel</h1>
+  <h1>${bbsName} SysOp Panel</h1>
   <input type="text" id="loginUser" placeholder="Username">
   <input type="password" id="loginPass" placeholder="Password">
   <button onclick="doLogin()">Login</button>
@@ -214,7 +219,7 @@ function getAdminHTML() {
 
 <div id="admin">
   <div class="header">
-    <h1>VibeBBS SysOp Panel</h1>
+    <h1>${bbsName} SysOp Panel</h1>
     <button onclick="doLogout()">Logout</button>
   </div>
   <div class="nav">
@@ -263,7 +268,11 @@ function getAdminHTML() {
 </div>
 
 <script>
-let token = localStorage.getItem('vibebbs_admin_token');
+const tokenKey = 'packetbbs_admin_token';
+const legacyTokenKey = 'vibebbs_admin_token';
+let token = localStorage.getItem(tokenKey) || localStorage.getItem(legacyTokenKey);
+if (token && !localStorage.getItem(tokenKey)) localStorage.setItem(tokenKey, token);
+localStorage.removeItem(legacyTokenKey);
 if (token) { showAdmin(); loadDashboard(); }
 
 async function api(path, opts = {}) {
@@ -282,14 +291,14 @@ async function doLogin() {
       body: JSON.stringify({ username: u, password: p })
     });
     const d = await r.json();
-    if (d.token) { token = d.token; localStorage.setItem('vibebbs_admin_token', token); showAdmin(); loadDashboard(); }
+    if (d.token) { token = d.token; localStorage.setItem(tokenKey, token); showAdmin(); loadDashboard(); }
     else { document.getElementById('loginError').textContent = d.error || 'Login failed'; }
   } catch(e) { document.getElementById('loginError').textContent = 'Connection error'; }
 }
 
 function doLogout() {
   api('logout', { method: 'POST' });
-  token = null; localStorage.removeItem('vibebbs_admin_token');
+  token = null; localStorage.removeItem(tokenKey); localStorage.removeItem(legacyTokenKey);
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('admin').style.display = 'none';
 }
@@ -346,13 +355,7 @@ async function deleteUser(id) {
 }
 
 async function loadMessages(baseId) {
-  const bases = ${JSON.stringify([
-    { id: 1, name: 'General Discussion' },
-    { id: 2, name: 'Vibe Coding' },
-    { id: 3, name: 'Show & Tell' },
-    { id: 4, name: 'Prompt Engineering' },
-    { id: 5, name: 'SysOp Corner' }
-  ])};
+  const bases = ${messageBases};
   let sel = '<select onchange="loadMsgBase(this.value)" style="background:#1a1a1a;border:1px solid #333;color:#00ff88;padding:5px;font-family:inherit;">';
   bases.forEach(b => { sel += '<option value="' + b.id + '"' + (b.id === (baseId||1) ? ' selected' : '') + '>' + b.name + '</option>'; });
   sel += '</select>';
