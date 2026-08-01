@@ -47,7 +47,7 @@ The [traditional BBS research and loop design](docs/TRADITIONAL-BBS-RESEARCH.md)
 - **SysOp Tools** — MOTD-on-login, SysOp paging (blinking alert to every level-200+ node), who's-online, system stats, and a token-authenticated web admin dashboard
 - **File Libraries** — 4 browsable catalog areas for utilities, text files, caller uploads, and ANSI art (listing/catalog; transfer not yet wired)
 - **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 14 tables) with scrypt-hashed passwords and call logging
-- **Deployment Guardrails** — Railway-aware HTTP/Telnet ports, database health checks, secure production bootstrap, bounded login/registration/admin attempts, origin-checked WebSockets, CI, and end-to-end listener smoke tests
+- **Deployment Guardrails** — Docker- and Railway-aware HTTP/Telnet ports, database health checks, secure production bootstrap, bounded login/registration/admin attempts, origin-checked WebSockets, CI, and end-to-end listener smoke tests
 
 ## Roadmap Summary
 
@@ -89,7 +89,21 @@ npm run verify
 npm run smoke
 ```
 
-See [docs/OPERATIONS.md](docs/OPERATIONS.md) before exposing the board publicly. It records the Railway volume, TCP proxy, backup, recovery, release, and public-smoke contracts.
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) before exposing the board publicly. It records the Docker and Railway persistence, backup, recovery, release, and public-smoke contracts.
+
+### Docker deployment
+
+The production Compose stack publishes HTTP on host port `8088` and maps standard Telnet port `23` to the application's internal `2323` listener. It persists the SQLite database in `./data` and the file library in `./files`.
+
+```bash
+cp .env.example .env
+# Set NODE_ENV=production and a long PACKETBBS_SYSOP_PASSWORD in .env.
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 packetbbs
+```
+
+Put an HTTP reverse proxy in front of `8088`; WebSocket upgrades use the same endpoint. Raw Telnet must be forwarded directly as TCP and is intentionally plaintext.
 
 ## Screenshots (What You'll See)
 
@@ -270,7 +284,7 @@ Board settings live in `config.json`; deployment and secrets use environment var
 |----------------------|---------|
 | `PORT` / `PACKETBBS_WEB_PORT` | HTTP port; Railway supplies `PORT` |
 | `TELNET_PORT` / `PACKETBBS_TELNET_PORT` | Independent raw Telnet listener port; Railway's TCP application port is also detected |
-| `PACKETBBS_DB_PATH` | SQLite path; use `/app/data/packetbbs.db` with the Railway volume |
+| `PACKETBBS_DB_PATH` | SQLite path; use `/app/data/packetbbs.db` with a persistent container volume |
 | `PACKETBBS_SYSOP_PASSWORD` | Required strong seed password for a fresh production database |
 | `PACKETBBS_ALLOWED_ORIGINS` | Optional comma-separated additional browser WebSocket origins |
 
@@ -314,6 +328,8 @@ Five runtime dependencies, zero build step.
 packetbbs/
 ├── server.js                  # Entry point — starts all servers
 ├── config.json                # BBS configuration
+├── Dockerfile                 # Production Node.js container image
+├── compose.yaml               # HTTP 8088, Telnet 23, and persistent storage
 ├── railway.json               # Railway start, health, replica, and volume contract
 ├── package.json
 ├── scripts/

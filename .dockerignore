@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.factory
+.env
+node_modules
+data
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+npm-debug.log*

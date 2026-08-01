@@ -1,6 +1,20 @@
 # PacketBBS Operations Runbook
 
-This runbook is the release, Railway, backup, recovery, and public-smoke contract for PacketBBS 1.2.1.
+This runbook is the release, Docker, Railway, backup, recovery, and public-smoke contract for PacketBBS 1.2.1.
+
+## Docker service contract
+
+The committed `compose.yaml` builds the production image, publishes the web listener on host port `8088`, publishes raw Telnet on standard host port `23`, and persists `/app/data` and `/app/files` in directories beside the Compose file. Caddy or another reverse proxy should send the web hostname to port `8088` with WebSocket upgrades intact. Telnet is a separate TCP service and never passes through the HTTP reverse proxy.
+
+Create `.env` from `.env.example`, set `NODE_ENV=production`, and supply a unique `PACKETBBS_SYSOP_PASSWORD` of at least 12 characters. Then run:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 packetbbs
+```
+
+Before an upgrade, use SQLite's online backup API or stop the container before copying the database. Preserve both `data/` and `files/`. After an upgrade, require a healthy container and run the public HTTP/Telnet smoke test. At the network edge, forward TCP/80 and TCP/443 to the reverse proxy and TCP/23 directly to the Docker host.
 
 ## Railway service contract
 
