@@ -7,36 +7,53 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html,
     body {
+      width: 100%;
+      height: 100%;
       background: #0a0a0a;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+    body {
+      position: relative;
       font-family: 'Courier New', monospace;
     }
-    #header {
-      color: #00bfff;
-      font-size: 14px;
-      padding: 10px;
-      text-align: center;
-    }
-    #header span { color: #00ff88; }
     #terminal-container {
-      border: 2px solid #333;
-      border-radius: 4px;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
       overflow: hidden;
-      box-shadow: 0 0 30px rgba(0, 191, 255, 0.1);
-      width: 820px;
-      padding: 8px;
+      padding: clamp(4px, 0.75vw, 12px);
       background: #0a0a0a;
     }
+    #terminal,
+    #terminal .xterm {
+      width: 100%;
+      height: 100%;
+    }
+    #terminal .xterm-viewport {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    #terminal .xterm-viewport::-webkit-scrollbar {
+      display: none;
+    }
     #status {
-      color: #666;
-      font-size: 12px;
-      padding: 8px;
-      text-align: center;
+      position: fixed;
+      right: max(8px, env(safe-area-inset-right));
+      bottom: max(8px, env(safe-area-inset-bottom));
+      z-index: 1001;
+      color: #888;
+      background: rgba(10, 10, 10, 0.82);
+      border: 1px solid #2a2a2a;
+      border-radius: 999px;
+      font-size: 11px;
+      line-height: 1;
+      padding: 6px 9px;
+      pointer-events: none;
     }
     #status.connected { color: #00ff88; }
     #status.disconnected { color: #ff4444; }
@@ -56,16 +73,14 @@
   </style>
 </head>
 <body>
-  <div id="header">
-    <span>PacketBBS</span> — Web Terminal
-  </div>
   <div id="terminal-container">
     <div id="terminal"></div>
   </div>
-  <div id="status">Connecting...</div>
+  <div id="status" role="status" aria-live="polite">Connecting...</div>
   <div class="scanline"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
   <script>
     const term = new window.Terminal({
@@ -74,8 +89,6 @@
       fontFamily: "'Courier New', 'Lucida Console', monospace",
       fontSize: 16,
       lineHeight: 1.1,
-      cols: 80,
-      rows: 40,
       scrollback: 1000,
       theme: {
         background: '#0a0a0a',
@@ -102,10 +115,26 @@
       }
     });
 
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
     term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
 
     const container = document.getElementById('terminal');
     term.open(container);
+
+    let fitFrame;
+    function fitTerminal() {
+      cancelAnimationFrame(fitFrame);
+      fitFrame = requestAnimationFrame(() => fitAddon.fit());
+    }
+
+    const resizeObserver = new ResizeObserver(fitTerminal);
+    resizeObserver.observe(document.getElementById('terminal-container'));
+    window.addEventListener('resize', fitTerminal);
+    window.visualViewport?.addEventListener('resize', fitTerminal);
+    document.fonts?.ready.then(fitTerminal);
+    container.addEventListener('pointerdown', () => term.focus());
+    fitTerminal();
 
     const statusEl = document.getElementById('status');
     let ws;

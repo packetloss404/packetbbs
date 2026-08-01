@@ -1,9 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const ansi = require('../src/core/ansi');
 const config = require('../config.json');
 const packageInfo = require('../package.json');
+
+const webTerminalHtml = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'web', 'index.html'),
+  'utf8',
+);
 
 test('PacketBBS is the primary product identity', () => {
   assert.equal(packageInfo.name, 'packetbbs');
@@ -93,4 +100,12 @@ test('main menu exposes the classic caller loop and keeps Vibe out of the shell'
   assert.match(screen, /Last Callers/);
   assert.match(screen, /Door Games/);
   assert.doesNotMatch(screen, /Vibe/);
+});
+
+test('web terminal fills the viewport without visible scrollbar chrome', () => {
+  assert.match(webTerminalHtml, /html,\s*body\s*{[^}]*overflow:\s*hidden/s);
+  assert.match(webTerminalHtml, /#terminal-container\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;/s);
+  assert.match(webTerminalHtml, /#terminal \.xterm-viewport::-webkit-scrollbar\s*{[^}]*display:\s*none;/s);
+  assert.match(webTerminalHtml, /@xterm\/addon-fit@0\.10\.0/);
+  assert.match(webTerminalHtml, /fitAddon\.fit\(\)/);
 });
