@@ -15,6 +15,9 @@ const NodeManager = require('./src/server/node-manager');
 const { createTelnetServer } = require('./src/server/telnet');
 const { createWebSocketServer } = require('./src/server/websocket');
 const { setupAdminPanel } = require('./src/admin/panel');
+const { resolveRuntimeConfig } = require('./src/server/runtime-config');
+
+const runtime = resolveRuntimeConfig(config);
 
 // Ensure data directory exists
 const dataDir = path.join(__dirname, 'data');
@@ -31,9 +34,31 @@ db.init();
 
 // Create node manager
 const nodeManager = new NodeManager(config.maxNodes);
+const startTime = Date.now();
 
 // ─── Express app (serves web terminal + admin panel) ────
 const app = express();
+app.disable('x-powered-by');
+if (runtime.trustProxy) app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+app.get('/healthz', (req, res) => {
+  const databaseHealthy = db.healthCheck();
+  res.set('Cache-Control', 'no-store');
+  res.status(databaseHealthy ? 200 : 503).json({
+    status: databaseHealthy ? 'ok' : 'unhealthy',
+    service: 'packetbbs',
+    version,
+    uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
+    database: databaseHealthy ? 'ok' : 'unavailable',
+    nodesOnline: nodeManager.getOnlineCount(),
+  });
+});
 
 // Serve the web terminal
 app.get('/', (req, res) => {
@@ -47,48 +72,68 @@ setupAdminPanel(app, nodeManager, config);
 const httpServer = http.createServer(app);
 
 // ─── WebSocket server ────────────────────────────────────
-createWebSocketServer(httpServer, nodeManager, config);
+const webSocketServer = createWebSocketServer(httpServer, nodeManager, config);
 
 // ─── Telnet server ───────────────────────────────────────
 const telnetServer = createTelnetServer(nodeManager, config);
 
 // ─── Start everything ────────────────────────────────────
-const startTime = Date.now();
-
-telnetServer.listen(config.telnetPort, () => {
+telnetServer.listen(runtime.telnetPort, runtime.host, () => {
   console.log('');
   console.log('  ╔══════════════════════════════════════════════════╗');
   console.log('  ║                    PACKETBBS                     ║');
   console.log('  ║          DIAL IN · DROP A PACKET · STAY          ║');
   console.log('  ╚══════════════════════════════════════════════════╝');
   console.log('');
-  console.log(`  Telnet server listening on port ${config.telnetPort}`);
+  console.log(`  Telnet server listening on ${runtime.host}:${runtime.telnetPort}`);
 });
 
-httpServer.listen(config.webPort, () => {
-  console.log(`  Web terminal:  http://localhost:${config.webPort}`);
-  console.log(`  Admin panel:   http://localhost:${config.webPort}/admin`);
-  console.log(`  Telnet:        telnet localhost ${config.telnetPort}`);
+httpServer.listen(runtime.webPort, runtime.host, () => {
+  const publicWebUrl = process.env.PACKETBBS_PUBLIC_WEB_URL ||
+    (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null);
+  const publicTelnetHost = process.env.PACKETBBS_PUBLIC_TELNET_HOST || process.env.RAILWAY_TCP_PROXY_DOMAIN;
+  const publicTelnetPort = process.env.PACKETBBS_PUBLIC_TELNET_PORT || process.env.RAILWAY_TCP_PROXY_PORT;
+  console.log(`  Web terminal:  ${publicWebUrl || `http://localhost:${runtime.webPort}`}`);
+  console.log(`  Admin panel:   ${(publicWebUrl || `http://localhost:${runtime.webPort}`)}/admin`);
+  console.log(`  Health check:  ${(publicWebUrl || `http://localhost:${runtime.webPort}`)}/healthz`);
+  console.log(`  Telnet:        ${publicTelnetHost && publicTelnetPort
+    ? `telnet ${publicTelnetHost} ${publicTelnetPort}`
+    : `telnet localhost ${runtime.telnetPort}`}`);
   console.log('');
   console.log(`  Max nodes: ${config.maxNodes}`);
   console.log(`  SysOp: ${config.sysopName}`);
-  console.log(`  Default user: SysOp / sysop`);
+  if (!runtime.production) console.log('  Development SysOp default is enabled only for fresh development/test databases.');
   console.log('');
   console.log(`  ${config.bbsName} v${version} is online. Stay curious!`);
   console.log('');
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n  Shutting down ${config.bbsName}...`);
-  telnetServer.close();
-  httpServer.close();
-  process.exit(0);
-});
 
-process.on('SIGTERM', () => {
-  console.log(`\n  Shutting down ${config.bbsName}...`);
-  telnetServer.close();
-  httpServer.close();
-  process.exit(0);
-});
+  for (const client of webSocketServer.clients) client.terminate();
+  webSocketServer.close();
+
+  let openServers = 2;
+  const finish = () => {
+    openServers -= 1;
+    if (openServers > 0) return;
+    db.close();
+    process.exit(0);
+  };
+  const forceExit = setTimeout(() => {
+    db.close();
+    process.exit(1);
+  }, 10000);
+  forceExit.unref();
+
+  telnetServer.close(finish);
+  httpServer.close(finish);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

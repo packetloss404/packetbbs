@@ -1,31 +1,46 @@
 // SysOp Admin Panel - Web-based administration for PacketBBS
 const express = require('express');
 const db = require('../core/database');
+const { createExpressRateLimit } = require('../server/guardrails');
+
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const MIN_ADMIN_PASSWORD_LENGTH = 8;
 
 function setupAdminPanel(app, nodeManager, config) {
-  // Simple session auth (cookie-based, basic for now)
-  const ADMIN_SESSIONS = new Set();
+  const ADMIN_SESSIONS = new Map();
+  const loginRateLimit = createExpressRateLimit({
+    max: 10,
+    windowMs: 15 * 60 * 1000,
+    message: 'Too many admin login attempts. Please try again later.',
+  });
+
+  app.use('/admin/api', express.json({ limit: '16kb' }));
 
   function generateToken() {
     return require('crypto').randomBytes(32).toString('hex');
   }
 
   function requireAuth(req, res, next) {
-    const token = req.headers['x-admin-token'] || req.query.token;
-    if (ADMIN_SESSIONS.has(token)) {
+    const token = req.headers['x-admin-token'];
+    const expiresAt = ADMIN_SESSIONS.get(token);
+    if (expiresAt && expiresAt > Date.now()) {
       next();
     } else {
+      if (token) ADMIN_SESSIONS.delete(token);
       res.status(401).json({ error: 'Unauthorized' });
     }
   }
 
   // ─── Auth ───
-  app.post('/admin/api/login', express.json(), (req, res) => {
+  app.post('/admin/api/login', loginRateLimit, (req, res) => {
     const { username, password } = req.body;
+    if (typeof username !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     const user = db.users.authenticate(username, password);
     if (user && user.access_level >= 200) {
       const token = generateToken();
-      ADMIN_SESSIONS.add(token);
+      ADMIN_SESSIONS.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
       res.json({ token, username: user.username });
     } else {
       res.status(401).json({ error: 'Invalid credentials or insufficient access' });
@@ -69,7 +84,7 @@ function setupAdminPanel(app, nodeManager, config) {
     res.json(safe);
   });
 
-  app.put('/admin/api/users/:id', requireAuth, express.json(), (req, res) => {
+  app.put('/admin/api/users/:id', requireAuth, (req, res) => {
     db.users.update(parseInt(req.params.id), req.body);
     res.json({ ok: true });
   });
@@ -79,7 +94,12 @@ function setupAdminPanel(app, nodeManager, config) {
     res.json({ ok: true });
   });
 
-  app.post('/admin/api/users/:id/reset-password', requireAuth, express.json(), (req, res) => {
+  app.post('/admin/api/users/:id/reset-password', requireAuth, (req, res) => {
+    if (typeof req.body.password !== 'string' || req.body.password.length < MIN_ADMIN_PASSWORD_LENGTH) {
+      return res.status(400).json({
+        error: `Password must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters`,
+      });
+    }
     db.users.resetPassword(parseInt(req.params.id), req.body.password);
     res.json({ ok: true });
   });
@@ -99,7 +119,7 @@ function setupAdminPanel(app, nodeManager, config) {
     res.json(db.bulletins.getAll());
   });
 
-  app.post('/admin/api/bulletins', requireAuth, express.json(), (req, res) => {
+  app.post('/admin/api/bulletins', requireAuth, (req, res) => {
     db.bulletins.create(req.body.title, req.body.body, req.body.author || 'SysOp');
     res.json({ ok: true });
   });

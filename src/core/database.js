@@ -2,19 +2,46 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const { isProductionEnvironment } = require('../server/runtime-config');
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 const DEFAULT_DB_PATH = path.join(PROJECT_ROOT, 'data', 'packetbbs.db');
 const LEGACY_DB_PATH = path.join(PROJECT_ROOT, 'data', 'vibebbs.db');
+const MIN_BOOTSTRAP_PASSWORD_LENGTH = 12;
 
-function resolveDatabasePath() {
-  if (process.env.PACKETBBS_DB_PATH) {
-    return path.resolve(PROJECT_ROOT, process.env.PACKETBBS_DB_PATH);
+function resolveDatabasePath(env = process.env) {
+  if (env.PACKETBBS_DB_PATH) {
+    return path.resolve(PROJECT_ROOT, env.PACKETBBS_DB_PATH);
+  }
+  if (env.RAILWAY_VOLUME_MOUNT_PATH) {
+    return path.join(env.RAILWAY_VOLUME_MOUNT_PATH, 'packetbbs.db');
   }
   if (fs.existsSync(DEFAULT_DB_PATH) || !fs.existsSync(LEGACY_DB_PATH)) {
     return DEFAULT_DB_PATH;
   }
   return LEGACY_DB_PATH;
+}
+
+function resolveBootstrapSysopPassword(env = process.env) {
+  const configured = env.PACKETBBS_SYSOP_PASSWORD;
+  if (configured !== undefined) {
+    if (configured.length < MIN_BOOTSTRAP_PASSWORD_LENGTH) {
+      throw new Error(`PACKETBBS_SYSOP_PASSWORD must be at least ${MIN_BOOTSTRAP_PASSWORD_LENGTH} characters.`);
+    }
+    return configured;
+  }
+
+  const insecureDevelopmentMode = env.NODE_ENV === 'development' ||
+    env.NODE_ENV === 'test' ||
+    env.PACKETBBS_ALLOW_INSECURE_DEV_PASSWORD === '1';
+  if (!insecureDevelopmentMode || isProductionEnvironment(env)) {
+    throw new Error(
+      'A fresh PacketBBS database requires PACKETBBS_SYSOP_PASSWORD. ' +
+      'The built-in development password is disabled outside explicit development/test mode.'
+    );
+  }
+
+  return 'sysop';
 }
 
 const DB_PATH = resolveDatabasePath();
@@ -84,8 +111,9 @@ function hashPassword(password, salt) {
 }
 
 function verifyPassword(password, hash, salt) {
-  const result = crypto.scryptSync(password, salt, 64).toString('hex');
-  return result === hash;
+  const result = crypto.scryptSync(password, salt, 64);
+  const expected = Buffer.from(hash, 'hex');
+  return result.length === expected.length && crypto.timingSafeEqual(result, expected);
 }
 
 function ensureColumn(tableName, columnName, definition) {
@@ -96,6 +124,7 @@ function ensureColumn(tableName, columnName, definition) {
 }
 
 function init() {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -269,7 +298,7 @@ function init() {
   // Seed default sysop user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
-    const { hash, salt } = hashPassword('sysop');
+    const { hash, salt } = hashPassword(resolveBootstrapSysopPassword());
     db.prepare(`
       INSERT INTO users (username, password_hash, password_salt, real_name, access_level)
       VALUES (?, ?, ?, ?, ?)
@@ -324,6 +353,15 @@ function init() {
   }
 
   return db;
+}
+
+function healthCheck() {
+  if (!db || !db.open) return false;
+  return db.prepare('SELECT 1 AS ok').get().ok === 1;
+}
+
+function close() {
+  if (db && db.open) db.close();
 }
 
 function migrateLegacySeedContent() {
@@ -833,6 +871,8 @@ const dungeon = {
 
 module.exports = {
   init,
+  close,
+  healthCheck,
   users,
   messages,
   bulletins,
@@ -845,5 +885,6 @@ module.exports = {
   dungeon,
   hashPassword,
   verifyPassword,
+  resolveBootstrapSysopPassword,
   resolveDatabasePath,
 };

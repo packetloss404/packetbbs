@@ -3,6 +3,11 @@ const ansi = require('./ansi');
 const db = require('./database');
 const config = require('../../config.json');
 
+const MAX_INPUT_BUFFER_LENGTH = 4096;
+const MAX_INPUT_CHUNK_BYTES = 64 * 1024;
+const MAX_LOGIN_ATTEMPTS_PER_SESSION = 5;
+const MIN_USER_PASSWORD_LENGTH = 8;
+
 const STATES = {
   LOGIN_USERNAME: 'login_username',
   LOGIN_PASSWORD: 'login_password',
@@ -49,7 +54,7 @@ const STATES = {
 };
 
 class BBSSession {
-  constructor(transport, nodeNum, nodeManager) {
+  constructor(transport, nodeNum, nodeManager, security = {}) {
     this.transport = transport;
     this.nodeNum = nodeNum;
     this.nodeManager = nodeManager;
@@ -59,6 +64,8 @@ class BBSSession {
     this.inputEcho = true;
     this.callLogId = null;
     this.sessionEnded = false;
+    this.security = security;
+    this.loginAttempts = 0;
 
     // State-specific data
     this.stateData = {};
@@ -94,6 +101,10 @@ class BBSSession {
   handleData(data) {
     if (this.sessionEnded) return;
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (buf.length > MAX_INPUT_CHUNK_BYTES) {
+      this.endConnection('Input limit exceeded.');
+      return;
+    }
 
     for (let i = 0; i < buf.length; i++) {
       const byte = buf[i];
@@ -129,6 +140,10 @@ class BBSSession {
 
       // Regular printable character
       if (byte >= 0x20 && byte < 0x7F) {
+        if (this.inputBuffer.length >= MAX_INPUT_BUFFER_LENGTH) {
+          this.write('\x07');
+          continue;
+        }
         const char = String.fromCharCode(byte);
         this.inputBuffer += char;
         if (this.inputEcho) {
@@ -299,6 +314,11 @@ class BBSSession {
         this.prompt('Username: ');
         return;
       }
+      if (this.security.consumeRegistration && !this.security.consumeRegistration()) {
+        this.write(`\r\n${ansi.brightRed}    Registration limit reached. Please try again later.${ansi.reset}\r\n\r\n`);
+        this.prompt('Username: ');
+        return;
+      }
       this.write(`\r\n${ansi.brightGreen}    ── New User Registration ──${ansi.reset}\r\n\r\n`);
       this.state = STATES.NEW_USER_USERNAME;
       this.prompt('Choose a username: ');
@@ -316,6 +336,14 @@ class BBSSession {
 
     const user = db.users.authenticate(this.stateData.loginUsername, input);
     if (!user) {
+      this.loginAttempts += 1;
+      const remoteAllowed = this.security.recordLoginFailure
+        ? this.security.recordLoginFailure()
+        : true;
+      if (this.loginAttempts >= MAX_LOGIN_ATTEMPTS_PER_SESSION || !remoteAllowed) {
+        this.endConnection('Too many failed login attempts. Please try again later.');
+        return;
+      }
       this.write(`\r\n${ansi.brightRed}    Invalid username or password!${ansi.reset}\r\n\r\n`);
       this.state = STATES.LOGIN_USERNAME;
       this.prompt('Username: ');
@@ -346,8 +374,8 @@ class BBSSession {
   }
 
   handleNewUserPassword(input) {
-    if (!input || input.length < 3) {
-      this.write(`\r\n${ansi.brightRed}    Password must be at least 3 characters.${ansi.reset}\r\n`);
+    if (!input || input.length < MIN_USER_PASSWORD_LENGTH) {
+      this.write(`\r\n${ansi.brightRed}    Password must be at least ${MIN_USER_PASSWORD_LENGTH} characters.${ansi.reset}\r\n`);
       this.prompt('Choose a password: ');
       return;
     }
@@ -1826,6 +1854,15 @@ class BBSSession {
 
     this.nodeManager.releaseNode(this.nodeNum);
     return true;
+  }
+
+  endConnection(message) {
+    if (this.sessionEnded) return;
+    this.write(`\r\n${ansi.brightRed}    ${message}${ansi.reset}\r\n`);
+    this.finalizeSession('disconnected from');
+    try {
+      this.transport.end();
+    } catch (e) {}
   }
 
   doGoodbye() {

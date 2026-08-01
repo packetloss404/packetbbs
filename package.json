@@ -1,14 +1,15 @@
 {
   "name": "packetbbs",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "PacketBBS - a modern, multi-node BBS with a retro terminal soul",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check src/admin/panel.js && node --check src/core/ansi.js && node --check src/core/bbs.js && node --check src/core/database.js && node --check src/doors/door1.js && node --check src/doors/door2.js && node --check src/doors/door3.js && node --check src/doors/door4.js && node --check src/doors/door5.js && node --check src/server/node-manager.js && node --check src/server/telnet.js && node --check src/server/websocket.js",
-    "verify": "npm run check && npm test"
+    "check": "node --check server.js && node --check scripts/smoke.js && node --check src/admin/panel.js && node --check src/core/ansi.js && node --check src/core/bbs.js && node --check src/core/database.js && node --check src/doors/door1.js && node --check src/doors/door2.js && node --check src/doors/door3.js && node --check src/doors/door4.js && node --check src/doors/door5.js && node --check src/server/guardrails.js && node --check src/server/node-manager.js && node --check src/server/runtime-config.js && node --check src/server/telnet.js && node --check src/server/websocket.js",
+    "verify": "npm run check && npm test",
+    "smoke": "node scripts/smoke.js"
   },
   "keywords": ["bbs", "retro", "ansi", "telnet", "websocket", "door-games"],
   "license": "MIT",

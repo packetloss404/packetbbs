@@ -7,12 +7,16 @@ const Database = require('better-sqlite3');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'packetbbs-test-'));
 const testDbPath = path.join(testDir, 'packetbbs.db');
+const originalNodeEnv = process.env.NODE_ENV;
 process.env.PACKETBBS_DB_PATH = testDbPath;
+process.env.NODE_ENV = 'test';
 
 const database = require('../src/core/database');
 
 test.after(() => {
   delete process.env.PACKETBBS_DB_PATH;
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
   fs.rmSync(testDir, { recursive: true, force: true });
 });
 

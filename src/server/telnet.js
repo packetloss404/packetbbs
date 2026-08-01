@@ -1,10 +1,23 @@
 // Telnet server for PacketBBS
 const net = require('net');
 const BBSSession = require('../core/bbs');
+const { FixedWindowLimiter, getSocketAddress } = require('./guardrails');
 
 function createTelnetServer(nodeManager, config) {
+  const connectionLimiter = new FixedWindowLimiter({ max: 30, windowMs: 60 * 1000 });
+  const loginFailureLimiter = new FixedWindowLimiter({ max: 12, windowMs: 15 * 60 * 1000 });
+  const registrationLimiter = new FixedWindowLimiter({ max: 3, windowMs: 60 * 60 * 1000 });
+
   const server = net.createServer((socket) => {
+    const connectionKey = getSocketAddress(socket);
+    const connectionResult = connectionLimiter.consume(connectionKey);
+    if (!connectionResult.allowed) {
+      socket.end('Too many connections. Please try again later.\r\n');
+      return;
+    }
+
     socket.setEncoding(null); // Raw binary
+    socket.setNoDelay(true);
 
     const nodeNum = nodeManager.allocateNode(null);
     if (nodeNum === null) {
@@ -25,7 +38,14 @@ function createTelnetServer(nodeManager, config) {
       end() { socket.end(); },
     };
 
-    const session = new BBSSession(transport, nodeNum, nodeManager);
+    const session = new BBSSession(transport, nodeNum, nodeManager, {
+      recordLoginFailure() {
+        return loginFailureLimiter.consume(connectionKey).allowed;
+      },
+      consumeRegistration() {
+        return registrationLimiter.consume(connectionKey).allowed;
+      },
+    });
     nodeManager.nodes.get(nodeNum).session = session;
 
     socket.on('data', (data) => {

@@ -6,7 +6,9 @@ const path = require('node:path');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'packetbbs-caller-loop-'));
 const testDbPath = path.join(testDir, 'packetbbs.db');
+const originalNodeEnv = process.env.NODE_ENV;
 process.env.PACKETBBS_DB_PATH = testDbPath;
+process.env.NODE_ENV = 'test';
 
 const database = require('../src/core/database');
 const BBSSession = require('../src/core/bbs');
@@ -19,6 +21,8 @@ let db;
 test.after(() => {
   if (db && db.open) db.close();
   delete process.env.PACKETBBS_DB_PATH;
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
   fs.rmSync(testDir, { recursive: true, force: true });
 });
 
@@ -131,4 +135,40 @@ test('traditional caller loop preserves continuity from logon through newscan', 
   session.disconnect();
   assert.equal(nodeManager.getOnlineCount(), 0);
   assert.ok(db.prepare('SELECT logout_time FROM call_log WHERE id = ?').get(callLogId).logout_time);
+});
+
+test('caller guardrails bound input, registration, and failed logins', () => {
+  if (!db || !db.open) db = database.init();
+
+  const output = [];
+  let transportEnds = 0;
+  const transport = {
+    write(data) { output.push(data); },
+    end() { transportEnds += 1; },
+  };
+  const nodeManager = new NodeManager(4);
+  const nodeNum = nodeManager.allocateNode(null);
+  const session = new BBSSession(transport, nodeNum, nodeManager, {
+    consumeRegistration() { return false; },
+    recordLoginFailure() { return true; },
+  });
+  nodeManager.nodes.get(nodeNum).session = session;
+
+  session.handleData('A'.repeat(5000));
+  assert.equal(session.inputBuffer.length, 4096);
+  session.inputBuffer = '';
+
+  session.processInput('NEW');
+  assert.equal(session.state, 'login_username');
+  assert.match(ansi.stripCodes(output.join('')), /Registration limit reached/);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    session.processInput('SysOp');
+    session.processInput('definitely-wrong');
+  }
+
+  assert.equal(session.sessionEnded, true);
+  assert.equal(transportEnds, 1);
+  assert.equal(nodeManager.getOnlineCount(), 0);
+  assert.match(ansi.stripCodes(output.join('')), /Too many failed login attempts/);
 });

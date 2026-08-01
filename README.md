@@ -47,6 +47,7 @@ The [traditional BBS research and loop design](docs/TRADITIONAL-BBS-RESEARCH.md)
 - **SysOp Tools** — MOTD-on-login, SysOp paging (blinking alert to every level-200+ node), who's-online, system stats, and a token-authenticated web admin dashboard
 - **File Libraries** — 4 browsable catalog areas for utilities, text files, caller uploads, and ANSI art (listing/catalog; transfer not yet wired)
 - **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 14 tables) with scrypt-hashed passwords and call logging
+- **Deployment Guardrails** — Railway-aware HTTP/Telnet ports, database health checks, secure production bootstrap, bounded login/registration/admin attempts, origin-checked WebSockets, CI, and end-to-end listener smoke tests
 
 ## Roadmap Summary
 
@@ -64,8 +65,12 @@ See [HANDOFF.md](HANDOFF.md) for acceptance criteria and protocol references.
 git clone git@github.com:packetloss404/packetbbs.git
 cd packetbbs
 npm install
+cp .env.example .env
+npm run verify
 npm start
 ```
+
+PowerShell equivalent: `Copy-Item .env.example .env`.
 
 Then connect:
 
@@ -75,13 +80,16 @@ Then connect:
 | Admin Panel | http://localhost:8088/admin |
 | Telnet | `telnet localhost 2323` |
 
-**Default login:** `SysOp` / `sysop`
+On a fresh local development database, `.env.example` permits the development-only login `SysOp` / `sysop`. A fresh production or Railway database instead requires `PACKETBBS_SYSOP_PASSWORD` with at least 12 characters; PacketBBS will not start with the known default.
 
 Validate the codebase with the same syntax-and-test loop used for this milestone:
 
 ```bash
 npm run verify
+npm run smoke
 ```
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) before exposing the board publicly. It records the Railway volume, TCP proxy, backup, recovery, release, and public-smoke contracts.
 
 ## Screenshots (What You'll See)
 
@@ -232,7 +240,7 @@ The SysOp admin panel is a web-based single-file vanilla-JS SPA at `/admin` with
 
 ## Configuration
 
-All settings live in `config.json`:
+Board settings live in `config.json`; deployment and secrets use environment variables:
 
 ```json
 {
@@ -258,6 +266,14 @@ All settings live in `config.json`:
 | `newUserLevel` | 10 | Access level for new accounts |
 | `sysopLevel` | 255 | Maximum access level |
 
+| Environment variable | Purpose |
+|----------------------|---------|
+| `PORT` / `PACKETBBS_WEB_PORT` | HTTP port; Railway supplies `PORT` |
+| `TELNET_PORT` / `PACKETBBS_TELNET_PORT` | Independent raw Telnet listener port; Railway's TCP application port is also detected |
+| `PACKETBBS_DB_PATH` | SQLite path; use `/app/data/packetbbs.db` with the Railway volume |
+| `PACKETBBS_SYSOP_PASSWORD` | Required strong seed password for a fresh production database |
+| `PACKETBBS_ALLOWED_ORIGINS` | Optional comma-separated additional browser WebSocket origins |
+
 ## Database
 
 PacketBBS uses SQLite through better-sqlite3 in WAL mode. New installations use `data/packetbbs.db`; when only an existing `data/vibebbs.db` is present, PacketBBS continues using it in place so the rename cannot strand caller data. `PACKETBBS_DB_PATH` can explicitly select another location.
@@ -276,7 +292,7 @@ The 14-table schema is created incrementally on startup and seeded on a brand-ne
 - **motd** — Message of the day shown on login
 - **dungeon_players**, **dungeon_history** — Persistent character state and AI-dungeon context
 
-The default SysOp account, welcome content, a sample poll, MOTD, and starter graffiti are seeded automatically on first launch.
+The SysOp account, welcome content, a sample poll, MOTD, and starter graffiti are seeded automatically on first launch. The familiar `SysOp / sysop` credentials are limited to explicit development/test mode; production seeding requires `PACKETBBS_SYSOP_PASSWORD`.
 
 ## Tech Stack
 
@@ -298,13 +314,18 @@ Five runtime dependencies, zero build step.
 packetbbs/
 ├── server.js                  # Entry point — starts all servers
 ├── config.json                # BBS configuration
+├── railway.json               # Railway start, health, replica, and volume contract
 ├── package.json
+├── scripts/
+│   └── smoke.js               # Local or public HTTP + Telnet release smoke
 ├── src/
 │   ├── core/
 │   │   ├── ansi.js            # ANSI escape codes & art screens
 │   │   ├── bbs.js             # Session state machine (~40 states)
 │   │   └── database.js        # SQLite schema & CRUD (14 tables)
 │   ├── server/
+│   │   ├── guardrails.js      # Rate, origin, and connection safeguards
+│   │   ├── runtime-config.js  # Railway/environment port resolution
 │   │   ├── telnet.js          # Telnet server (raw TCP + IAC)
 │   │   ├── websocket.js       # WebSocket server
 │   │   └── node-manager.js    # Multi-node connection tracking
@@ -320,6 +341,7 @@ packetbbs/
 │       └── index.html         # Browser terminal (xterm.js)
 ├── test/                       # Branding, database, terminal, and caller-loop tests
 ├── docs/
+│   ├── OPERATIONS.md          # Railway, backups, recovery, and release gate
 │   └── TRADITIONAL-BBS-RESEARCH.md
 └── data/                      # SQLite database (gitignored)
 ```
