@@ -1,8 +1,8 @@
 # PacketBBS Community and Network Handoff
 
-**Prepared:** 2026-07-30
+**Prepared:** 2026-07-30; implementation status updated 2026-08-01
 
-**Status:** Proposal for review; the features in this document are not all implemented
+**Status:** The traditional caller-shell milestone is implemented. Reader continuity, offline packets, networking, and compatibility sections remain proposals for review.
 
 **Scope:** Product direction, historical BBS research, technical architecture, migration guardrails, and a phased implementation plan
 
@@ -26,7 +26,7 @@ The connective product idea is already in the name: messages, replies, files, an
 ## Decisions recommended for approval
 
 1. Keep **PacketBBS** as the main product and system identity.
-2. Rename the current **Vibe Sub-BBS** section to **Vibe Community** when the first community-navigation milestone is implemented.
+2. Keep the implemented **Vibe Community** section as a special-interest district rather than the main shell identity.
 3. Keep Vibe Coding, AI Workflows, Vibe Wars, Dungeon of the Vibe Lords, neon ANSI treatments, and experimental features inside that community.
 4. Keep local mail, public conferences, network echoes, and external news as distinct user concepts.
 5. Implement BBS-era reader behavior before exposing historical network protocols.
@@ -104,7 +104,7 @@ PacketBBS
 └── Community
     ├── Who's Online
     ├── Last Callers
-    ├── Graffiti Wall
+    ├── One-Liners
     ├── Voting Booth
     └── Member Directory
 ```
@@ -228,6 +228,11 @@ The current code already provides:
 
 - Shared Telnet and WebSocket `BBSSession` handling
 - Multi-node presence and broadcasts
+- A “Since Your Last Call” summary with mail, unread message, new-file, caller, and daily-call counts
+- A compact traditional main command shell with persistent novice, expert, and super-expert modes
+- A global new-message scan that uses per-user read records across accessible conferences
+- Conference-aware message display with separate public follow-up and private E-Mail reply paths
+- Last Callers and idempotent logoff/disconnect cleanup
 - Local message bases and a reply pointer
 - Per-message read records and conference unread counts
 - Local private mail and online-recipient notification
@@ -239,9 +244,11 @@ The current code already provides:
 
 The rename work preserves stable message-base IDs and existing `data/vibebbs.db` installations while using `data/packetbbs.db` for new installations.
 
+The research and exact implementation boundary for this milestone are recorded in [docs/TRADITIONAL-BBS-RESEARCH.md](docs/TRADITIONAL-BBS-RESEARCH.md).
+
 ### Known architectural gaps
 
-- `bbs.js` handles the `[N]` command by selecting every message rather than consulting unread state.
+- Reader state is per-message only; subscriptions, scan order, high-water pointers, catch-up, and explicit mark-unread are not implemented.
 - `messages` uses a local integer ID, username strings, and one local `reply_to` pointer.
 - `private_mail` has one recipient, one shared read flag, and no durable sent/delivery/thread state.
 - Message-base definitions live in `config.json` rather than the database.
@@ -365,15 +372,17 @@ Likely modules:
 
 ### Phase 1 — Caller loop and reader correctness
 
-- Fix unread selection for `[N]`
+- [x] Fix unread selection for `[N]`
+- [x] Add the logon “what is new” summary
+- [x] Distinguish public follow-up from private reply
+- [x] Add Last Callers
+- [x] Add persistent novice/expert/super menu modes
 - Add subscribed-area scans
 - Add per-area cursor/high-water state
 - Add next unread, catch up, and mark unread
-- Add the logon “what is new” summary
-- Distinguish public follow-up from private reply
-- Add quoted replies, signatures, last callers, and compact profiles
+- Add quoted replies, signatures, and compact profiles
 
-**Exit condition:** a caller can log in, see what changed, read only relevant new material, respond correctly, and return later without losing position.
+**Current result:** a caller can log in, see what changed, read only unread material, and choose a public or private response. The phase remains open until conference subscriptions and durable per-conference position are implemented.
 
 ### Phase 2 — Message and E-Mail foundation
 
@@ -480,16 +489,16 @@ Do not block ordinary community participation behind upload ratios, download cre
 
 ## Review checklist
 
-Before implementation begins, confirm:
+Current decisions and remaining approvals:
 
-- [ ] “Vibe Community” is the preferred section name.
+- [x] “Vibe Community” is the implemented section name.
 - [ ] PacketNet is the preferred native-network name.
-- [ ] The first build target is Caller Loop + Newscan + Threads + E-Mail.
+- [x] The first build target began with Caller Loop + Newscan and preserved the existing E-Mail path.
 - [ ] Packet Briefcase should precede or ship alongside classic QWK.
 - [ ] The first PacketNet topology will be a trusted hub and controlled test nodes.
 - [ ] External NNTP groups begin read-only and allowlisted.
 - [ ] Internet email remains out of scope until separately approved.
-- [ ] Stable current message-base IDs and legacy database fallback must be preserved.
+- [x] Stable current message-base IDs and legacy database fallback are preserved.
 
 ## Primary historical and protocol references
 
@@ -508,4 +517,4 @@ Before implementation begins, confirm:
 
 ## Recommended next implementation
 
-Start with **Caller Loop + Newscan + Threads + E-Mail**. It is useful without federation, fixes a known reader defect, establishes the canonical identifiers and per-user state required by every later adapter, and makes PacketBBS feel more like a real community before the first external packet is exchanged.
+Continue with **Reader Continuity**: subscriptions and scan ordering, high-water pointers, catch-up/mark-unread, remembered current conference, selected quoting, signatures, and search. That closes the remaining Phase 1 gap before the local E-Mail schema, offline packets, or external networking expand the system.

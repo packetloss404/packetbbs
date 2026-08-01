@@ -10,6 +10,7 @@ const STATES = {
   NEW_USER_PASSWORD: 'new_user_password',
   NEW_USER_CONFIRM: 'new_user_confirm',
   NEW_USER_REALNAME: 'new_user_realname',
+  LOGON_SUMMARY: 'logon_summary',
   MAIN_MENU: 'main_menu',
   MESSAGE_BASES: 'message_bases',
   MESSAGE_LIST: 'message_list',
@@ -24,6 +25,7 @@ const STATES = {
   DOOR_PLAYING: 'door_playing',
   BULLETINS: 'bulletins',
   WHOS_ONLINE: 'whos_online',
+  LAST_CALLERS: 'last_callers',
   SYSTEM_STATS: 'system_stats',
   USER_SETTINGS: 'user_settings',
   USER_SETTINGS_FIELD: 'user_settings_field',
@@ -56,6 +58,7 @@ class BBSSession {
     this.inputBuffer = '';
     this.inputEcho = true;
     this.callLogId = null;
+    this.sessionEnded = false;
 
     // State-specific data
     this.stateData = {};
@@ -89,6 +92,7 @@ class BBSSession {
   }
 
   handleData(data) {
+    if (this.sessionEnded) return;
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
 
     for (let i = 0; i < buf.length; i++) {
@@ -119,6 +123,7 @@ class BBSSession {
         const input = this.inputBuffer.trim();
         this.inputBuffer = '';
         this.processInput(input);
+        if (this.sessionEnded) return;
         continue;
       }
 
@@ -129,7 +134,7 @@ class BBSSession {
         if (this.inputEcho) {
           this.write(char);
         } else {
-          this.write('•');
+          this.write('*');
         }
       }
     }
@@ -150,6 +155,7 @@ class BBSSession {
   }
 
   processInput(input) {
+    if (this.sessionEnded) return;
     switch (this.state) {
       case STATES.LOGIN_USERNAME:
         this.handleLoginUsername(input);
@@ -168,6 +174,9 @@ class BBSSession {
         break;
       case STATES.NEW_USER_REALNAME:
         this.handleNewUserRealname(input);
+        break;
+      case STATES.LOGON_SUMMARY:
+        this.continueAfterLogon();
         break;
       case STATES.MAIN_MENU:
         this.handleMainMenu(input);
@@ -211,6 +220,7 @@ class BBSSession {
         this.handleBulletins(input);
         break;
       case STATES.WHOS_ONLINE:
+      case STATES.LAST_CALLERS:
       case STATES.SYSTEM_STATS:
       case STATES.PAGE_SYSOP:
         this.showMainMenu();
@@ -268,7 +278,7 @@ class BBSSession {
         this.handlePollVote(input);
         break;
       case STATES.MOTD:
-        this.showMainMenu();
+        this.showMainMenu(true);
         break;
       default:
         this.showMainMenu();
@@ -376,11 +386,13 @@ class BBSSession {
   }
 
   loginUser(user) {
+    const previousLastCall = user.last_call_date;
     this.user = user;
     db.users.updateLastCall(user.id);
     this.callLogId = db.callLog.logLogin(user.id, user.username, this.nodeNum);
+    this.user = db.users.getById(user.id);
     this.nodeManager.setUsername(this.nodeNum, user.username);
-    this.nodeManager.setActivity(this.nodeNum, 'Main Menu');
+    this.nodeManager.setActivity(this.nodeNum, 'Reading logon summary');
 
     // Broadcast login notification
     this.nodeManager.broadcast(
@@ -388,34 +400,76 @@ class BBSSession {
       this.nodeNum
     );
 
-    // Check for new private mail
-    const unreadMail = db.privateMail.countUnread(user.username);
-    if (unreadMail > 0) {
-      this.write(`\r\n${ansi.brightYellow}    *** You have ${unreadMail} unread private mail message${unreadMail > 1 ? 's' : ''}! ***${ansi.reset}\r\n`);
-    }
+    const accessibleBaseIds = this.getAccessibleMessageBases().map((base) => base.id);
+    const previousCaller = db.callLog.getPrevious(this.callLogId);
+    this.stateData.logonSummary = {
+      username: user.username,
+      nodeNum: this.nodeNum,
+      lastCall: formatLocalDateTime(previousLastCall) || 'First call',
+      previousCaller: previousCaller ? previousCaller.username : null,
+      unreadMail: db.privateMail.countUnread(user.username),
+      unreadMessages: db.messages.countUnreadByBases(accessibleBaseIds, user.id),
+      newFiles: db.files.countSince(previousLastCall),
+      callersSince: db.callLog.countSince(previousLastCall, user.id),
+      callsToday: db.callLog.countToday(),
+    };
+    this.showLogonSummary();
+  }
 
-    // Show MOTD if one exists
+  getAccessibleMessageBases() {
+    if (!this.user) return [];
+    return config.messageBases.filter((base) => base.accessLevel <= this.user.access_level);
+  }
+
+  getMainStatus() {
+    const accessibleBaseIds = this.getAccessibleMessageBases().map((base) => base.id);
+    return {
+      username: this.user.username,
+      nodeNum: this.nodeNum,
+      callCount: this.user.total_calls,
+      unreadMail: db.privateMail.countUnread(this.user.username),
+      unreadMessages: db.messages.countUnreadByBases(accessibleBaseIds, this.user.id),
+      menuMode: this.user.menu_mode || 'NOVICE',
+    };
+  }
+
+  showLogonSummary() {
+    this.state = STATES.LOGON_SUMMARY;
+    this.write(ansi.art.logonSummary(this.stateData.logonSummary));
+  }
+
+  continueAfterLogon() {
     const motdEntry = db.motd.getActive();
     if (motdEntry) {
       this.showMotd(motdEntry);
     } else {
-      this.showMainMenu();
+      this.showMainMenu(true);
     }
   }
 
   // ─── MAIN MENU ──────────────────────────────────────────
 
-  showMainMenu() {
+  showMainMenu(forceFull = false) {
     this.state = STATES.MAIN_MENU;
     this.nodeManager.setActivity(this.nodeNum, 'Main Menu');
     const user = db.users.findByUsername(this.user.username);
     if (user) this.user = user;
-    this.write(ansi.art.mainMenu(this.user.username, `#${this.nodeNum}`, this.user.total_calls));
-    this.prompt('Command: ');
+    const status = this.getMainStatus();
+    const menuMode = status.menuMode;
+    if (forceFull || menuMode === 'NOVICE') {
+      this.write(ansi.art.mainMenu(status));
+      this.prompt('Main command (? for menu): ');
+      return;
+    }
+    this.write(ansi.art.mainPrompt(status, menuMode === 'SUPER'));
   }
 
   handleMainMenu(input) {
     const cmd = (input || '').toUpperCase();
+    if (!cmd) {
+      this.showMainMenu();
+      return;
+    }
     switch (cmd) {
       case 'M':
         this.showMessageBases();
@@ -432,10 +486,18 @@ class BBSSession {
       case 'B':
         this.showBulletins();
         break;
-      case 'C':
+      case 'T':
+      case 'C': // Legacy alias
         this.showChatRooms();
         break;
-      case 'R':
+      case 'N':
+        this.startNewMessageScan();
+        break;
+      case 'L':
+        this.showLastCallers();
+        break;
+      case 'O':
+      case 'R': // Legacy alias
         this.showGraffitiWall();
         break;
       case 'V':
@@ -444,7 +506,8 @@ class BBSSession {
       case 'W':
         this.showWhosOnline();
         break;
-      case 'U':
+      case 'Y':
+      case 'U': // Legacy alias
         this.showUserSettings();
         break;
       case 'P':
@@ -453,12 +516,33 @@ class BBSSession {
       case 'S':
         this.showSystemStats();
         break;
+      case 'X':
+        this.cycleMenuMode();
+        break;
+      case '?':
+        this.showMainMenu(true);
+        break;
       case 'G':
         this.doGoodbye();
         break;
       default:
-        this.write(`${ansi.brightRed}    Invalid command!${ansi.reset}\r\n`);
-        this.prompt('Command: ');
+        this.write(`${ansi.brightRed}    Invalid command! Press ? for the menu.${ansi.reset}\r\n`);
+        this.showMainMenu();
+    }
+  }
+
+  cycleMenuMode(returnToSettings = false) {
+    const modes = ['NOVICE', 'EXPERT', 'SUPER'];
+    const current = (this.user.menu_mode || 'NOVICE').toUpperCase();
+    const currentIndex = modes.indexOf(current);
+    const next = modes[(currentIndex + 1 + modes.length) % modes.length];
+    db.users.update(this.user.id, { menu_mode: next });
+    this.user = db.users.getById(this.user.id);
+    this.write(`${ansi.brightGreen}    Menu mode set to ${next}.${ansi.reset}\r\n`);
+    if (returnToSettings) {
+      this.showUserSettings();
+    } else {
+      this.showMainMenu(next === 'NOVICE');
     }
   }
 
@@ -466,10 +550,9 @@ class BBSSession {
 
   showMessageBases() {
     this.state = STATES.MESSAGE_BASES;
-    this.nodeManager.setActivity(this.nodeNum, 'Message Bases');
+    this.nodeManager.setActivity(this.nodeNum, 'Message Conferences');
 
-    const bases = config.messageBases
-      .filter(b => b.accessLevel <= this.user.access_level)
+    const bases = this.getAccessibleMessageBases()
       .map(b => ({
         ...b,
         totalMessages: db.messages.countByBase(b.id),
@@ -486,6 +569,11 @@ class BBSSession {
       return;
     }
 
+    if (input.toUpperCase() === 'N') {
+      this.startNewMessageScan();
+      return;
+    }
+
     const baseId = parseInt(input);
     const base = config.messageBases.find(b => b.id === baseId);
     if (!base || base.accessLevel > this.user.access_level) {
@@ -498,12 +586,35 @@ class BBSSession {
     this.showMessageList();
   }
 
+  startNewMessageScan() {
+    const bases = this.getAccessibleMessageBases();
+    const unread = [];
+    for (const base of bases) {
+      for (const message of db.messages.getUnreadByBase(base.id, this.user.id)) {
+        unread.push(message);
+      }
+    }
+
+    if (unread.length === 0) {
+      this.write(`\r\n${ansi.brightYellow}    No new messages in your accessible conferences.${ansi.reset}\r\n`);
+      this.showMainMenu();
+      return;
+    }
+
+    this.stateData.messages = unread;
+    this.stateData.messageIndex = 0;
+    this.stateData.scanMode = 'GLOBAL';
+    this.write(`\r\n${ansi.brightGreen}    New-message scan: ${unread.length} message${unread.length === 1 ? '' : 's'}.${ansi.reset}\r\n`);
+    this.showMessage(unread[0]);
+  }
+
   showMessageList() {
     this.state = STATES.MESSAGE_LIST;
     const base = this.stateData.currentBase;
     const msgs = db.messages.getByBase(base.id);
     this.stateData.messages = msgs;
     this.stateData.messageIndex = 0;
+    this.stateData.scanMode = null;
 
     const r = ansi.reset;
     const c = ansi.brightCyan;
@@ -561,14 +672,11 @@ class BBSSession {
     }
 
     if (cmd === 'N') {
-      // Read new/unread messages
-      const msgs = this.stateData.messages;
-      const unread = msgs.filter(m => {
-        // Simple check - in production would check message_read table
-        return true;
-      });
+      const unread = db.messages.getUnreadByBase(this.stateData.currentBase.id, this.user.id);
       if (unread.length > 0) {
+        this.stateData.messages = unread;
         this.stateData.messageIndex = 0;
+        this.stateData.scanMode = 'BASE';
         this.showMessage(unread[0]);
       } else {
         this.write(`${ansi.brightYellow}    No new messages.${ansi.reset}\r\n`);
@@ -596,10 +704,13 @@ class BBSSession {
   showMessage(msg) {
     this.state = STATES.MESSAGE_READ;
     this.stateData.currentMessage = msg;
+    const base = config.messageBases.find(item => item.id === msg.base_id);
+    if (base) this.stateData.currentBase = base;
     db.messages.markRead(msg.id, this.user.id);
 
     const display = {
       id: msg.id,
+      conference: base ? base.name : `Conference ${msg.base_id}`,
       date: msg.created_at || '',
       fromUser: msg.from_user || '',
       toUser: msg.to_user || 'All',
@@ -608,7 +719,34 @@ class BBSSession {
     };
 
     this.write(ansi.art.messageRead(display));
-    this.prompt('R/N/P/Q: ');
+    this.prompt('F/R/N/P/Q: ');
+  }
+
+  rememberMessageReturn() {
+    this.stateData.composeReturn = {
+      source: 'MESSAGE_READ',
+      messages: this.stateData.messages,
+      messageIndex: this.stateData.messageIndex,
+      scanMode: this.stateData.scanMode,
+      currentBase: this.stateData.currentBase,
+    };
+  }
+
+  finishCompose(fallback) {
+    const context = this.stateData.composeReturn;
+    this.stateData.composeReturn = null;
+    if (context && context.source === 'MESSAGE_READ') {
+      this.stateData.messages = context.messages;
+      this.stateData.messageIndex = context.messageIndex;
+      this.stateData.scanMode = context.scanMode;
+      this.stateData.currentBase = context.currentBase;
+      const message = context.messages && context.messages[context.messageIndex];
+      if (message) {
+        this.showMessage(message);
+        return;
+      }
+    }
+    fallback();
   }
 
   handleMessageRead(input) {
@@ -616,23 +754,42 @@ class BBSSession {
     const msgs = this.stateData.messages;
 
     switch (cmd) {
-      case 'R':
-        this.state = STATES.MESSAGE_WRITE_TO;
+      case 'F':
+        this.rememberMessageReturn();
+        this.state = STATES.MESSAGE_WRITE_SUBJECT;
         this.stateData.newMessage = {
           replyTo: this.stateData.currentMessage.id,
           subject: 'Re: ' + (this.stateData.currentMessage.subject || '').replace(/^Re: /i, ''),
-          to: this.stateData.currentMessage.from_user,
+          to: 'All',
         };
-        this.write(`\r\n${ansi.brightGreen}    Replying to ${this.stateData.currentMessage.from_user}${ansi.reset}\r\n`);
-        this.prompt(`To [${this.stateData.newMessage.to}]: `);
+        this.write(`\r\n${ansi.brightGreen}    Public follow-up in ${this.stateData.currentBase.name}${ansi.reset}\r\n`);
+        this.prompt(`Subject [${this.stateData.newMessage.subject}]: `);
+        break;
+      case 'R':
+        this.rememberMessageReturn();
+        this.state = STATES.PRIVATE_MAIL_WRITE_TO;
+        this.stateData.newMail = {
+          to: this.stateData.currentMessage.from_user,
+          subject: 'Re: ' + (this.stateData.currentMessage.subject || '').replace(/^Re: /i, ''),
+        };
+        this.write(`\r\n${ansi.brightGreen}    Private reply to ${this.stateData.currentMessage.from_user}${ansi.reset}\r\n`);
+        this.prompt(`To [${this.stateData.newMail.to}]: `);
         break;
       case 'N':
         if (this.stateData.messageIndex < msgs.length - 1) {
           this.stateData.messageIndex++;
           this.showMessage(msgs[this.stateData.messageIndex]);
         } else {
-          this.write(`${ansi.brightYellow}    End of messages.${ansi.reset}\r\n`);
-          this.prompt('R/N/P/Q: ');
+          const scanMode = this.stateData.scanMode;
+          this.stateData.scanMode = null;
+          this.write(`${ansi.brightYellow}    End of ${scanMode ? 'new-message scan' : 'messages'}.${ansi.reset}\r\n`);
+          if (scanMode === 'GLOBAL') {
+            this.showMainMenu();
+          } else if (scanMode === 'BASE') {
+            this.showMessageList();
+          } else {
+            this.prompt('F/R/N/P/Q: ');
+          }
         }
         break;
       case 'P':
@@ -641,12 +798,21 @@ class BBSSession {
           this.showMessage(msgs[this.stateData.messageIndex]);
         } else {
           this.write(`${ansi.brightYellow}    Beginning of messages.${ansi.reset}\r\n`);
-          this.prompt('R/N/P/Q: ');
+          this.prompt('F/R/N/P/Q: ');
         }
         break;
       case 'Q':
+        if (this.stateData.scanMode === 'GLOBAL') {
+          this.stateData.scanMode = null;
+          this.showMainMenu();
+        } else {
+          this.stateData.scanMode = null;
+          this.showMessageList();
+        }
+        break;
       default:
-        this.showMessageList();
+        this.write(`${ansi.brightRed}    Invalid command!${ansi.reset}\r\n`);
+        this.prompt('F/R/N/P/Q: ');
         break;
     }
   }
@@ -684,23 +850,31 @@ class BBSSession {
       const body = this.stateData.messageLines.join('\r\n');
       if (!body.trim()) {
         this.write(`${ansi.brightRed}    Message is empty! Aborted.${ansi.reset}\r\n`);
-        this.showMessageList();
+        this.finishCompose(() => this.showMessageList());
         return;
       }
 
       const nm = this.stateData.newMessage;
       const base = this.stateData.currentBase;
-      db.messages.create(base.id, this.user.username, nm.to, nm.subject, body, nm.replyTo || null);
+      const messageId = db.messages.create(
+        base.id,
+        this.user.username,
+        nm.to,
+        nm.subject,
+        body,
+        nm.replyTo || null
+      );
+      db.messages.markRead(messageId, this.user.id);
       db.users.incrementPosts(this.user.id);
 
       this.write(`\r\n${ansi.brightGreen}    Message saved!${ansi.reset}\r\n`);
-      this.showMessageList();
+      this.finishCompose(() => this.showMessageList());
       return;
     }
 
     if (input.toUpperCase() === '/A') {
       this.write(`${ansi.brightYellow}    Message aborted.${ansi.reset}\r\n`);
-      this.showMessageList();
+      this.finishCompose(() => this.showMessageList());
       return;
     }
 
@@ -712,7 +886,7 @@ class BBSSession {
 
   showFileAreas() {
     this.state = STATES.FILE_AREAS;
-    this.nodeManager.setActivity(this.nodeNum, 'File Areas');
+    this.nodeManager.setActivity(this.nodeNum, 'File Libraries');
 
     const areas = config.fileAreas.filter(a => a.accessLevel <= this.user.access_level);
     const r = ansi.reset;
@@ -724,7 +898,7 @@ class BBSSession {
 
     let screen = ansi.clear +
       `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
-      `${d}    │${w}                    File Areas                        ${d}│\r\n` +
+      `${d}    │${w}                  File Libraries                      ${d}│\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
       `${d}    │  ${y}#   ${w}Area Name                    ${g}Files              ${d}│\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
@@ -795,7 +969,7 @@ class BBSSession {
     }
 
     screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
-    screen += `${d}    │  ${y}[${w}Q${y}]${c} Return to File Areas                          ${d}    │\r\n`;
+    screen += `${d}    │  ${y}[${w}Q${y}]${c} Return to File Libraries                      ${d}    │\r\n`;
     screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
 
     this.write(screen);
@@ -930,9 +1104,26 @@ class BBSSession {
     this.write(ansi.art.whosOnline(nodes));
   }
 
+  showLastCallers() {
+    this.state = STATES.LAST_CALLERS;
+    this.nodeManager.setActivity(this.nodeNum, 'Last Callers');
+    const activeCallIds = new Set(
+      Array.from(this.nodeManager.nodes.values())
+        .map((node) => node.session && node.session.callLogId)
+        .filter(Boolean)
+    );
+    const calls = db.callLog.getRecent(15)
+      .map((call) => ({
+        ...call,
+        login_time: formatLocalDateTime(call.login_time),
+        online: activeCallIds.has(call.id),
+      }));
+    this.write(ansi.art.lastCallers(calls));
+  }
+
   showSystemStats() {
     this.state = STATES.SYSTEM_STATS;
-    this.nodeManager.setActivity(this.nodeNum, 'System Stats');
+    this.nodeManager.setActivity(this.nodeNum, 'System Information');
 
     const userStats = db.users.getStats();
     const uptime = process.uptime();
@@ -964,13 +1155,14 @@ class BBSSession {
 
     const screen = ansi.clear +
       `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
-      `${d}    │${w}                   User Settings                      ${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${c}PACKETBBS // YOUR SETTINGS`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
-      `${d}    │  ${y}[${w}1${y}]${c} Real Name:    ${w}${(this.user.real_name || 'Not set').padEnd(30)}${d}│\r\n` +
-      `${d}    │  ${y}[${w}2${y}]${c} Location:     ${w}${(this.user.location || 'Not set').padEnd(30)}${d}│\r\n` +
-      `${d}    │  ${y}[${w}3${y}]${c} Email:        ${w}${(this.user.email || 'Not set').padEnd(30)}${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}1${y}]${c} Real Name:    ${w}${String(this.user.real_name || 'Not set').substring(0, 30)}`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}2${y}]${c} Location:     ${w}${String(this.user.location || 'Not set').substring(0, 30)}`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}3${y}]${c} Email:        ${w}${String(this.user.email || 'Not set').substring(0, 30)}`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}4${y}]${c} Menu Mode:    ${w}${String(this.user.menu_mode || 'NOVICE').substring(0, 30)}`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
-      `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}Q${y}]${c} Return to Main Menu`)}\r\n` +
       `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
 
     this.write(screen);
@@ -986,6 +1178,11 @@ class BBSSession {
 
     const fields = { '1': 'real_name', '2': 'location', '3': 'email' };
     const labels = { '1': 'Real Name', '2': 'Location', '3': 'Email' };
+
+    if (cmd === '4') {
+      this.cycleMenuMode(true);
+      return;
+    }
 
     if (fields[cmd]) {
       this.stateData.settingField = fields[cmd];
@@ -1026,28 +1223,25 @@ class BBSSession {
 
   showChatRooms() {
     this.state = STATES.CHAT_ROOMS;
-    this.nodeManager.setActivity(this.nodeNum, 'Chat Lobby');
+    this.nodeManager.setActivity(this.nodeNum, 'TeleChat');
 
     const r = ansi.reset;
     const c = ansi.brightCyan;
     const y = ansi.brightYellow;
     const w = ansi.brightWhite;
     const g = ansi.brightGreen;
-    const m = ansi.brightMagenta;
     const d = ansi.cyan;
 
     const screen = ansi.clear +
       `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
-      `${d}    │${m}              ░█▀▀░█░█░█▀█░▀█▀░░░█▀▄░█▀█░█▀█░█▄█    ${d}│\r\n` +
-      `${d}    │${m}              ░█░░░█▀█░█▀█░░█░░░░█▀▄░█░█░█░█░█░█    ${d}│\r\n` +
-      `${d}    │${m}              ░▀▀▀░▀░▀░▀░▀░░▀░░░░▀░▀░▀▀▀░▀▀▀░▀░▀    ${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${c}PACKETBBS // TELECHAT`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
-      `${d}    │                                                      │\r\n` +
-      `${d}    │  ${y}[${w}1${y}]${c} The Lobby           ${g}General chat for everyone   ${d}│\r\n` +
-      `${d}    │  ${y}[${w}2${y}]${c} Vibe Lounge         ${g}Chill vibes only            ${d}│\r\n` +
-      `${d}    │  ${y}[${w}3${y}]${c} Code Corner         ${g}Talk shop, share code       ${d}│\r\n` +
-      `${d}    │                                                      │\r\n` +
-      `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
+      `${ansi.frameRow(d)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}1${y}]${c} The Lobby           ${g}General chat for everyone`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}2${y}]${c} Vibe Lounge         ${g}Chill vibes only`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}3${y}]${c} Code Corner         ${g}Talk shop, share code`)}\r\n` +
+      `${ansi.frameRow(d)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}Q${y}]${c} Return to Main Menu`)}\r\n` +
       `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
 
     this.write(screen);
@@ -1142,7 +1336,7 @@ class BBSSession {
 
   showGraffitiWall() {
     this.state = STATES.GRAFFITI_WALL;
-    this.nodeManager.setActivity(this.nodeNum, 'Graffiti Wall');
+    this.nodeManager.setActivity(this.nodeNum, 'One-Liners');
 
     const entries = db.graffiti.getRecent(15);
     const r = ansi.reset;
@@ -1150,29 +1344,25 @@ class BBSSession {
     const y = ansi.brightYellow;
     const w = ansi.brightWhite;
     const g = ansi.brightGreen;
-    const m = ansi.brightMagenta;
     const d = ansi.cyan;
 
     let screen = ansi.clear +
       `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
-      `${d}    │${m}        ░█▀▀░█▀▄░█▀█░█▀▀░█▀▀░▀█▀░▀█▀░▀█▀            ${d}│\r\n` +
-      `${d}    │${m}        ░█░█░█▀▄░█▀█░█▀▀░█▀▀░░█░░░█░░░█░            ${d}│\r\n` +
-      `${d}    │${m}        ░▀▀▀░▀░▀░▀░▀░▀░░░▀░░░▀▀▀░░▀░░▀▀▀            ${d}│\r\n` +
-      `${d}    │${w}                    The Wall                          ${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${c}PACKETBBS // ONE-LINERS`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
 
     if (entries.length === 0) {
-      screen += `${d}    │  ${w}The wall is blank. Be the first to write!           ${d}│\r\n`;
+      screen += `${ansi.frameRow(d, `  ${w}No one-liners yet. Be the first to post!`)}\r\n`;
     } else {
       for (const entry of entries.reverse()) {
         const user = ansi.stripCodes(entry.username).substring(0, 12).padEnd(12);
         const msg = entry.message.substring(0, 38).padEnd(38);
-        screen += `${d}    │  ${y}${user} ${w}${msg}${d}│\r\n`;
+        screen += `${ansi.frameRow(d, `  ${y}${user} ${w}${msg}`)}\r\n`;
       }
     }
 
     screen += `${d}    ├──────────────────────────────────────────────────────┤\r\n`;
-    screen += `${d}    │  ${y}[${w}W${y}]${c} Write on the wall   ${y}[${w}Q${y}]${c} Return to Main Menu   ${d}  │\r\n`;
+    screen += `${ansi.frameRow(d, `  ${y}[${w}W${y}]${c} Write one-liner    ${y}[${w}Q${y}]${c} Return to Main Menu`)}\r\n`;
     screen += `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
 
     this.write(screen);
@@ -1187,7 +1377,7 @@ class BBSSession {
     }
     if (cmd === 'W') {
       this.state = STATES.GRAFFITI_WRITE;
-      this.prompt('Your message (max 38 chars): ');
+      this.prompt('One-liner (max 38 chars): ');
       return;
     }
     this.prompt('Command: ');
@@ -1201,7 +1391,7 @@ class BBSSession {
 
     const msg = input.substring(0, 38);
     db.graffiti.add(this.user.username, msg);
-    this.write(`${ansi.brightGreen}    Your mark has been left on the wall!${ansi.reset}\r\n`);
+    this.write(`${ansi.brightGreen}    One-liner posted!${ansi.reset}\r\n`);
     this.showGraffitiWall();
   }
 
@@ -1209,7 +1399,7 @@ class BBSSession {
 
   showPrivateMailMenu() {
     this.state = STATES.PRIVATE_MAIL_MENU;
-    this.nodeManager.setActivity(this.nodeNum, 'Private Mail');
+    this.nodeManager.setActivity(this.nodeNum, 'Electronic Mail');
 
     const unread = db.privateMail.countUnread(this.user.username);
     const inbox = db.privateMail.getInbox(this.user.username);
@@ -1218,22 +1408,18 @@ class BBSSession {
     const y = ansi.brightYellow;
     const w = ansi.brightWhite;
     const g = ansi.brightGreen;
-    const m = ansi.brightMagenta;
     const d = ansi.cyan;
 
     const screen = ansi.clear +
       `${d}    ┌──────────────────────────────────────────────────────┐\r\n` +
-      `${d}    │${m}        ░█▄█░█▀█░▀█▀░█░░░░░█▀▄░█▀█░▀▄▀              ${d}│\r\n` +
-      `${d}    │${m}        ░█░█░█▀█░░█░░█░░░░░█▀▄░█░█░░█░              ${d}│\r\n` +
-      `${d}    │${m}        ░▀░▀░▀░▀░▀▀▀░▀▀▀░░░▀▀░░▀▀▀░▀░▀              ${d}│\r\n` +
-      `${d}    │${w}                 Private Mail                        ${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${c}PACKETBBS // ELECTRONIC MAIL`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
-      `${d}    │  ${g}Inbox: ${w}${String(inbox.length).padEnd(5)} ${g}Unread: ${w}${String(unread).padEnd(5)}                     ${d}│\r\n` +
+      `${ansi.frameRow(d, `  ${g}Inbox:${w} ${inbox.length}   ${g}Unread:${w} ${unread}`)}\r\n` +
       `${d}    ├──────────────────────────────────────────────────────┤\r\n` +
-      `${d}    │                                                      │\r\n` +
-      `${d}    │  ${y}[${w}I${y}]${c} Read Inbox          ${y}[${w}W${y}]${c} Write New Mail         ${d}│\r\n` +
-      `${d}    │  ${y}[${w}Q${y}]${c} Return to Main Menu                            ${d}  │\r\n` +
-      `${d}    │                                                      │\r\n` +
+      `${ansi.frameRow(d)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}I${y}]${c} Read Inbox        ${y}[${w}W${y}]${c} Write Mail`)}\r\n` +
+      `${ansi.frameRow(d, `  ${y}[${w}Q${y}]${c} Return to Main Menu`)}\r\n` +
+      `${ansi.frameRow(d)}\r\n` +
       `${d}    └──────────────────────────────────────────────────────┘${r}\r\n`;
 
     this.write(screen);
@@ -1330,15 +1516,15 @@ class BBSSession {
     const d = ansi.cyan;
 
     this.write(`${d}    ┌──────────────────────────────────────────────────────┐\r\n`);
-    this.write(`${d}    │ ${y}Mail#: ${w}${String(mail.id).padEnd(8)} ${y}Date: ${w}${(mail.created_at || '').padEnd(20)} ${d}     │\r\n`);
-    this.write(`${d}    │ ${y}From:  ${w}${(mail.from_user || '').padEnd(20)} ${y}To: ${w}${(mail.to_user || '').padEnd(17)} ${d}│\r\n`);
-    this.write(`${d}    │ ${y}Subj:  ${w}${(mail.subject || '').padEnd(44)} ${d}│\r\n`);
+    this.write(`${d}    │ ${y}Mail#: ${w}${String(mail.id).substring(0, 8).padEnd(8)} ${y}Date: ${w}${String(mail.created_at || '').substring(0, 20).padEnd(20)} ${d}     │\r\n`);
+    this.write(`${d}    │ ${y}From:  ${w}${String(mail.from_user || '').substring(0, 20).padEnd(20)} ${y}To: ${w}${String(mail.to_user || '').substring(0, 17).padEnd(17)} ${d}│\r\n`);
+    this.write(`${d}    │ ${y}Subj:  ${w}${String(mail.subject || '').substring(0, 44).padEnd(44)} ${d}│\r\n`);
     this.write(`${d}    ├──────────────────────────────────────────────────────┤\r\n`);
     this.write(`${d}    │${r}\r\n`);
 
-    const lines = (mail.body || '').split('\r\n');
+    const lines = ansi.wrapText(mail.body || '', 52);
     for (const line of lines) {
-      this.write(`      ${line}\r\n`);
+      this.write(`${d}    │  ${w}${line.padEnd(52)}${d}│\r\n`);
     }
 
     this.write(`${d}    │\r\n`);
@@ -1420,7 +1606,7 @@ class BBSSession {
       const body = this.stateData.mailLines.join('\r\n');
       if (!body.trim()) {
         this.write(`${ansi.brightRed}    Message is empty! Aborted.${ansi.reset}\r\n`);
-        this.showPrivateMailMenu();
+        this.finishCompose(() => this.showPrivateMailMenu());
         return;
       }
 
@@ -1435,13 +1621,13 @@ class BBSSession {
       }
 
       this.write(`\r\n${ansi.brightGreen}    Mail sent to ${nm.to}!${ansi.reset}\r\n`);
-      this.showPrivateMailMenu();
+      this.finishCompose(() => this.showPrivateMailMenu());
       return;
     }
 
     if (input.toUpperCase() === '/A') {
       this.write(`${ansi.brightYellow}    Mail aborted.${ansi.reset}\r\n`);
-      this.showPrivateMailMenu();
+      this.finishCompose(() => this.showPrivateMailMenu());
       return;
     }
 
@@ -1622,24 +1808,31 @@ class BBSSession {
 
   // ─── GOODBYE ────────────────────────────────────────────
 
-  doGoodbye() {
-    this.write(ansi.art.goodbye());
+  finalizeSession(action) {
+    if (this.sessionEnded) return false;
+    this.sessionEnded = true;
 
-    // Log the logout
     if (this.callLogId) {
       db.callLog.logLogout(this.callLogId);
+      this.callLogId = null;
     }
 
-    // Broadcast logout
     if (this.user) {
       this.nodeManager.broadcast(
-        `\r\n${ansi.brightYellow}    *** ${this.user.username} has logged off from Node ${this.nodeNum} ***${ansi.reset}\r\n`,
+        `\r\n${ansi.brightYellow}    *** ${this.user.username} has ${action} Node ${this.nodeNum} ***${ansi.reset}\r\n`,
         this.nodeNum
       );
     }
 
-    // Release node and close
     this.nodeManager.releaseNode(this.nodeNum);
+    return true;
+  }
+
+  doGoodbye() {
+    if (this.sessionEnded) return;
+    this.state = STATES.GOODBYE;
+    this.write(ansi.art.goodbye());
+    this.finalizeSession('logged off from');
 
     setTimeout(() => {
       try {
@@ -1650,16 +1843,7 @@ class BBSSession {
 
   // Called when connection drops unexpectedly
   disconnect() {
-    if (this.callLogId) {
-      db.callLog.logLogout(this.callLogId);
-    }
-    if (this.user) {
-      this.nodeManager.broadcast(
-        `\r\n${ansi.brightYellow}    *** ${this.user.username} has disconnected from Node ${this.nodeNum} ***${ansi.reset}\r\n`,
-        this.nodeNum
-      );
-    }
-    this.nodeManager.releaseNode(this.nodeNum);
+    this.finalizeSession('disconnected from');
   }
 }
 
@@ -1667,6 +1851,19 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + 'B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'K';
   return (bytes / (1024 * 1024)).toFixed(1) + 'M';
+}
+
+function formatLocalDateTime(value) {
+  if (!value) return '';
+  const timestamp = String(value);
+  const isoTimestamp = /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp)
+    ? timestamp
+    : `${timestamp.replace(' ', 'T')}Z`;
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 module.exports = BBSSession;

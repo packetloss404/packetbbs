@@ -11,23 +11,23 @@
 
 **A community BBS for builders, tinkerers, and curious minds.**
 
-PacketBBS brings back the magic of 1980s/90s bulletin boards—ANSI art, door games, message bases, private mail, polls, and a graffiti wall—with a modern hybrid architecture. Connect by Telnet for the authentic experience or use the browser terminal. Both transports feed one shared session engine, so callers across 16 nodes see each other in real time.
+PacketBBS is the self-hosted community node in the Packet family: a place for callers, messages, files, chat, and doors. Connect by Telnet for the authentic experience or use the browser terminal. Both transports feed one shared session engine, so callers across 16 nodes see each other in real time.
 
-The original vibe-coding personality still has a home. The **Vibe Sub-BBS** is a deliberately neon corner of the message network, joined by the Vibe Lounge and two named door worlds. It is part of PacketBBS, not the premise of the whole system.
+The original vibe-coding personality still has a home. **Vibe Community** is a deliberately neon corner of the message network, joined by the Vibe Lounge and named door worlds. It is part of PacketBBS, not the premise of the whole system.
 
 ## Direction
 
 PacketBBS is evolving toward a local-first community node inspired by the best interaction patterns of early- and late-1990s BBS systems:
 
-- A caller loop centered on mail waiting, subscribed-conference newscans, new files, callers, doors, and deliberate logoff
+- A caller loop centered on mail waiting, new-message scans, new files, callers, doors, and deliberate logoff
 - Clear separation between local E-Mail, local conferences, shared PacketNet echoes, routed NetMail, and external NetNews
 - Offline **Packet Briefcase** and QWK/REP workflows for reading and replying away from the live connection
 - Curated file libraries, daily-turn doors, compact caller profiles, last-callers lists, and other small features that make a community feel inhabited
 - Authenticated store-and-forward federation only after local threading, unread state, moderation, and delivery queues are reliable
 
-The current repository still labels the neon section **Vibe Sub-BBS**. The proposed next information architecture calls it **Vibe Community**, retaining its boards and doors while PacketBBS becomes the broader system identity.
+The first traditional-BBS milestone is implemented: callers now receive a “Since Your Last Call” summary, use a compact conventional command shell, can persist novice/expert/super menu modes, run a real unread scan across conferences, distinguish public follow-ups from private replies, and view Last Callers. The existing special-interest boards are grouped under **Vibe Community**.
 
-The complete research, architectural proposal, migration constraints, risks, and phased review checklist live in **[HANDOFF.md](HANDOFF.md)**. Items in that document are proposed work unless they are also listed as implemented features below.
+The [traditional BBS research and loop design](docs/TRADITIONAL-BBS-RESEARCH.md) records the TriBBS, Spitfire, PCBoard, WWIV, Renegade, and Synchronet comparison. The broader network proposal, migration constraints, risks, and phased review checklist live in [HANDOFF.md](HANDOFF.md).
 
 ---
 
@@ -35,25 +35,26 @@ The complete research, architectural proposal, migration constraints, risks, and
 
 - **Hybrid Access** — Raw Telnet server (TCP 2323, real IAC negotiation) + browser web terminal (xterm.js over WebSocket) with CRT scanline effect, both driving one `BBSSession` engine
 - **Multi-Node Concurrency** — Up to 16 simultaneous users with cross-protocol broadcasts: login/logout/disconnect notices, SysOp pages, and new-mail alerts reach online users regardless of how they connected
+- **Traditional Caller Loop** — A post-authentication “Since Your Last Call” summary, message/mail/new-file counts, previous caller, calls today, Last Callers, deliberate logoff, and persisted novice/expert/super menu modes
 - **ANSI Art UI** — Full-color retro interface with box drawing, gradients, and block art throughout (~40-state ANSI session machine, hand-written byte-level input parsing including backspace and Telnet IAC)
-- **Message Bases** — 5 threaded conferences with reply chains, per-user unread tracking (`message_read` join table), access-level gating, and a `/S` save / `/A` abort multi-line editor
-- **Private Mail** — Person-to-person mail with inbox/read/reply/delete, recipient validation, unread badges on login, and live "new mail" push if the recipient is currently online
+- **Message Conferences** — 5 threaded conferences with access-level gating, per-user read tracking, correct global/per-conference newscan, public follow-up versus private reply, and a `/S` save / `/A` abort multi-line editor
+- **Electronic Mail** — Person-to-person mail with inbox/read/reply/delete, recipient validation, unread counts in the caller summary and main prompt, and live "new mail" push if the recipient is currently online
 - **Polls & Voting Booth** — Interactive polls with one-vote-per-user enforcement (DB-level unique constraint) and results rendered as percentage ASCII bar charts
-- **Live Multi-Room Chat** — 3 chat rooms with real cross-node message relay scoped per room, join/leave announcements, and `/W` who's-here
-- **Graffiti Wall** — Tag the wall; usernames are ANSI-stripped before display
-- **Vibe Sub-BBS** — A grouped set of boards for AI-assisted building, agents, prompts, and experimental workflows
+- **TeleChat** — 3 live rooms with real cross-node message relay scoped per room, join/leave announcements, and `/W` who's-here
+- **One-Liners** — A compact caller wall; usernames are ANSI-stripped before display
+- **Vibe Community** — Grouped boards for AI-assisted building, agents, prompts, and experimental workflows
 - **5 Door Games** — Two classic-inspired ports, two originals, and an AI Dungeon Master MUD powered by Claude
 - **SysOp Tools** — MOTD-on-login, SysOp paging (blinking alert to every level-200+ node), who's-online, system stats, and a token-authenticated web admin dashboard
-- **File Areas** — 4 browsable catalog areas for scripts, context files, automation recipes, and ANSI art (listing/catalog; transfer not yet wired)
+- **File Libraries** — 4 browsable catalog areas for utilities, text files, caller uploads, and ANSI art (listing/catalog; transfer not yet wired)
 - **Persistent Storage** — SQLite (better-sqlite3, WAL mode, 14 tables) with scrypt-hashed passwords and call logging
 
 ## Roadmap Summary
 
-1. **Caller loop and reader correctness** — reliable newscan, subscriptions, high-water pointers, catch-up, quoted replies, last callers, and a “what is new” logon summary
-2. **Message and E-Mail foundation** — stable global IDs, real thread metadata, database-backed areas, Inbox/Sent/Saved/Drafts, moderation, and personal filters
-3. **Offline packets and file libraries** — Packet Briefcase, QWK/REP, search, extended file descriptions, batch downloads, and upload quarantine
-4. **PacketNet lab** — signed node identities, scheduled mail runs, trusted hub fan-out, retries, deduplication, path display, and moderation
-5. **Compatibility adapters** — authenticated NNTP, optional FTN/FidoNet support, and carefully allowlisted external sources
+1. **Traditional caller shell — shipped in 1.2.0** — reliable unread newscan, last-call summary, Last Callers, menu modes, conventional labels, public/private reply split, and idempotent disconnect cleanup
+2. **Reader continuity** — subscriptions, high-water pointers, catch-up, mark unread, quoted replies, search, and remembered current conference
+3. **Message and E-Mail foundation** — stable global IDs, real thread metadata, database-backed areas, Inbox/Sent/Saved/Drafts, moderation, and personal filters
+4. **Offline packets and file libraries** — Packet Briefcase, QWK/REP, search, extended file descriptions, batch downloads, and upload quarantine
+5. **PacketNet lab and adapters** — signed node identities, scheduled mail runs, trusted hub fan-out, retries, deduplication, authenticated NNTP, and optional FTN/FidoNet support
 
 See [HANDOFF.md](HANDOFF.md) for acceptance criteria and protocol references.
 
@@ -76,14 +77,20 @@ Then connect:
 
 **Default login:** `SysOp` / `sysop`
 
+Validate the codebase with the same syntax-and-test loop used for this milestone:
+
+```bash
+npm run verify
+```
+
 ## Screenshots (What You'll See)
 
 PacketBBS renders the caller experience entirely in ANSI art. Here's what the flow looks like:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  A community BBS for builders and curious minds      │
-│  Messages, files, doors, and one very neon annex     │
+│  PacketBBS: the self-hosted Packet community node    │
+│  Messages, files, callers, chat, and door games      │
 └──────────────────────────────────────────────────────┘
 
     Enter your credentials below
@@ -96,13 +103,14 @@ The main menu provides access to all BBS functions:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  [M] Message Bases        [E] Private Mail           │
-│  [F] File Areas           [P] Page SysOp             │
-│  [D] Door Games           [S] System Stats           │
-│  [B] Bulletins            [V] Voting Booths          │
-│  [C] Chat Rooms           [R] Graffiti Wall          │
-│  [W] Who's Online         [U] User Settings          │
-│  [G] Goodbye / Logoff                                │
+│  [M] Message Conferences  [E] Electronic Mail        │
+│  [F] File Libraries       [D] Door Games             │
+│  [B] Bulletins            [T] TeleChat               │
+│  [N] New Message Scan     [L] Last Callers           │
+│  [W] Who's Online         [V] Voting Booth           │
+│  [O] One-Liners           [Y] Your Settings          │
+│  [P] Page SysOp           [S] System Information     │
+│  [X] Menu Mode            [G] Goodbye / Logoff       │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -126,7 +134,7 @@ The main menu provides access to all BBS functions:
 
 Both Telnet and WebSocket connections construct the same `BBSSession` over a tiny `transport` shim (`write`/`end`). Telnet sends real IAC negotiation bytes (`WILL ECHO`, `WILL/DO SUPPRESS-GO-AHEAD`) and parses raw input byte-by-byte; WebSocket adds ping/pong keepalive for idle timeout. The `NodeManager` tracks every active node across both transports as a `node → {session, username, activity}` map and provides `broadcast()`, which powers cross-protocol login/logout/paging/new-mail announcements.
 
-## Message Bases
+## Message Conferences
 
 | # | Conference | Description | Access |
 |---|-----------|-------------|--------|
@@ -138,9 +146,9 @@ Both Telnet and WebSocket connections construct the same `BBSSession` over a tin
 
 Messages support threading (replies), per-user read tracking via the `message_read` join table, access-level gating per conference, and writing with `/S` to save and `/A` to abort.
 
-The message menu renders section headings from `config.json`. General Discussion and Show & Tell form the main PacketBBS boards; Vibe Coding and AI Workflows form the Vibe Sub-BBS; SysOp Corner remains a restricted system board. Numeric IDs are intentionally stable so existing posts do not need a data migration.
+The message menu renders section headings from `config.json`. General Discussion and Show & Tell form the Main Board; Vibe Coding and AI Workflows form Vibe Community; SysOp Corner remains a restricted System conference. Numeric IDs are intentionally stable so existing posts do not need a data migration.
 
-## Private Mail
+## Electronic Mail
 
 Person-to-person messaging backed by a dedicated `private_mail` table:
 
@@ -157,18 +165,18 @@ An interactive voting subsystem (`polls`, `poll_options`, `poll_votes` tables):
 - Live results rendered as percentage ASCII bar charts
 - Ships with a seeded sample poll on first run
 
-## Chat Rooms & Graffiti
+## TeleChat & One-Liners
 
-- **Live Chat** — 3 rooms with real-time cross-node message relay scoped to the room you're in, plus join/leave announcements and `/W` to see who's present.
-- **Graffiti Wall** — Leave a tag on the wall, seeded with starter messages. Usernames are ANSI-stripped before rendering so nobody can break the layout.
+- **TeleChat** — 3 rooms with real-time cross-node message relay scoped to the room you're in, plus join/leave announcements and `/W` to see who's present. Vibe Lounge retains the neon annex's personality.
+- **One-Liners** — Leave a compact message for other callers. Usernames are ANSI-stripped before rendering so nobody can break the layout.
 
-## File Areas
+## File Libraries
 
 | # | Area | Description |
 |---|------|-------------|
-| 1 | Scripts & Tools | Useful scripts and utilities |
-| 2 | Agent Context Files | Project instructions and reusable context files |
-| 3 | Automation Recipes | Prompts, workflows, and reusable templates |
+| 1 | Utilities | Useful scripts, tools, and small programs |
+| 2 | Text Files & Docs | Guides, notes, zines, and reference material |
+| 3 | Community Uploads | Files shared by PacketBBS callers |
 | 4 | ANSI Art | ANSI art files and packs |
 
 > Note: file areas are browsable catalogs (listing + metadata). Actual upload/download transfer is not yet wired.
@@ -256,7 +264,7 @@ PacketBBS uses SQLite through better-sqlite3 in WAL mode. New installations use 
 
 The 14-table schema is created incrementally on startup and seeded on a brand-new board via namespaced CRUD modules over prepared statements:
 
-- **users** — Accounts with scrypt-hashed passwords (per-user salt), access levels, and stats
+- **users** — Accounts with scrypt-hashed passwords (per-user salt), access levels, caller stats, and persistent menu mode
 - **messages** — Threaded messages organized by conference
 - **message_read** — Per-user read tracking for unread counts
 - **bulletins** — SysOp announcements with active/inactive toggle
@@ -310,7 +318,9 @@ packetbbs/
 │   │   └── panel.js           # SysOp web admin panel (Express + embedded SPA)
 │   └── web/
 │       └── index.html         # Browser terminal (xterm.js)
-├── test/                       # Node.js smoke and migration tests
+├── test/                       # Branding, database, terminal, and caller-loop tests
+├── docs/
+│   └── TRADITIONAL-BBS-RESEARCH.md
 └── data/                      # SQLite database (gitignored)
 ```
 

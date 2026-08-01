@@ -4,12 +4,12 @@
 _Findings from a 2026-07-17 code audit, preserved for later._
 
 ### Later / deferred
-- **[low/M]** '[N]ew messages' reader has a stubbed unread filter that returns everything (bbs.js:566-568)
-  - Fix: src/core/bbs.js:566 filter always returns true. Proper fix needs a message_read tracking table (user_id, message_id or last-read high-water mark per base) plus a query; then filter msgs by unread. Cosmetic today — [N] just shows all msgs. Hobby BBS.
-- **[low/L]** File areas are list-only — handleFileList just calls showFileAreas, no upload/download transfer (bbs.js:805)
-  - Fix: src/core/bbs.js:805 handleFileList is a stub. Real file transfer over telnet/websocket (list contents, download/upload, protocol) is a substantial feature; config.json already defines fileAreas dirs. Incomplete feature, not a defect.
+- **[medium/M]** Reader continuity still needs subscriptions and high-water pointers
+  - The 1.2.0 caller-loop milestone fixed global/per-conference `[N]` scans using the existing `message_read` table. The next step is caller-controlled scan order, per-conference cursors, catch-up, mark-unread, remembered conference, and next-unread-thread behavior.
+- **[low/L]** File libraries are list-only — `handleFileList` returns to the library selector, with no upload/download transfer
+  - Real file transfer over Telnet/WebSocket (list contents, download/upload, protocol) is a substantial feature; `config.json` already defines file-library directories. Incomplete feature, not a defect.
 - **[low/M]** Automated coverage is still narrow
-  - Current smoke tests cover PacketBBS branding, message-base grouping/ID stability, ANSI rendering, fresh database setup, and the exact-match rename migration. Next targets: `db.users.authenticate` / access levels, admin `requireAuth`, message-base access gating, and session navigation.
+  - Current tests cover PacketBBS branding, message-base grouping/ID stability, 80-column caller screens, fresh database setup, exact-match seed migration, and the logon-to-newscan caller loop. Next targets: `db.users.authenticate` / access levels, admin `requireAuth`, message-base access gating, mail composition, and door return transitions.
 
 ### Known limitations (deliberate — not planned)
 - /admin static HTML served without requireAuth; only /admin/api/* routes gated

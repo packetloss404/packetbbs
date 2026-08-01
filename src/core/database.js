@@ -39,7 +39,7 @@ const seedContent = {
       'Remember: Be excellent to each other. Keep vibing!',
     graffitiMessage: 'First! Welcome to VibeBBS - leave your mark here!',
   },
-  current: {
+  previous: {
     bulletinTitle: 'Welcome to PacketBBS!',
     bulletinBody: 'Welcome to PacketBBS, a terminal community for builders and curious minds!\r\n\r\n' +
       'This is where retro BBS culture meets modern projects. Share what you are\r\n' +
@@ -56,6 +56,23 @@ const seedContent = {
       'Dial in. Drop a packet. Stay awhile.',
     graffitiMessage: 'First! Welcome to PacketBBS - leave your mark here!',
   },
+  current: {
+    bulletinTitle: 'Welcome to PacketBBS!',
+    bulletinBody: 'Welcome to PacketBBS, a multi-node bulletin board system.\r\n\r\n' +
+      'Check your electronic mail, scan the message conferences, browse the\r\n' +
+      'file libraries, meet other callers, and try the doors.\r\n\r\n' +
+      'The Vibe Community keeps the original experimental boards and games\r\n' +
+      'alive inside the larger system.\r\n\r\n' +
+      'Be excellent to each other. - SysOp',
+    messageSubject: 'Welcome to PacketBBS!',
+    messageBody: 'Welcome to the General Discussion conference.\r\n' +
+      'Introduce yourself, join a thread, or tell us what brought you here.\r\n\r\n' +
+      'Be excellent to each other.',
+    motdBody: 'PacketBBS is online. Check your mail, run a new-message scan,\r\n' +
+      'browse the file libraries, and visit the doors.\r\n\r\n' +
+      'Press ? at the Main prompt to redisplay the command menu.',
+    graffitiMessage: 'First caller on the PacketBBS one-liner board!',
+  },
 };
 
 let db;
@@ -69,6 +86,13 @@ function hashPassword(password, salt) {
 function verifyPassword(password, hash, salt) {
   const result = crypto.scryptSync(password, salt, 64).toString('hex');
   return result === hash;
+}
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (!columns.some((column) => column.name === columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
 }
 
 function init() {
@@ -90,6 +114,7 @@ function init() {
       total_posts INTEGER DEFAULT 0,
       total_uploads INTEGER DEFAULT 0,
       total_downloads INTEGER DEFAULT 0,
+      menu_mode TEXT NOT NULL DEFAULT 'NOVICE',
       last_call_date TEXT,
       first_call_date TEXT DEFAULT (datetime('now')),
       created_at TEXT DEFAULT (datetime('now'))
@@ -236,6 +261,9 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id);
   `);
 
+  // Additive compatibility for databases created before caller menu modes.
+  ensureColumn('users', 'menu_mode', "TEXT NOT NULL DEFAULT 'NOVICE'");
+
   migrateLegacySeedContent();
 
   // Seed default sysop user if no users exist
@@ -274,9 +302,9 @@ function init() {
     // Seed a sample poll
     const pollResult = db.prepare(`
       INSERT INTO polls (question, author) VALUES (?, ?)
-    `).run('What is your favorite AI coding assistant?', 'SysOp');
+    `).run('What brings you back to a BBS?', 'SysOp');
     const pollId = pollResult.lastInsertRowid;
-    const pollOptions = ['Claude', 'ChatGPT', 'Copilot', 'Gemini', 'Other'];
+    const pollOptions = ['Messages', 'Files', 'Doors', 'Chat', 'The community'];
     for (let i = 0; i < pollOptions.length; i++) {
       db.prepare('INSERT INTO poll_options (poll_id, option_text, sort_order) VALUES (?, ?, ?)').run(pollId, pollOptions[i], i);
     }
@@ -299,30 +327,69 @@ function init() {
 }
 
 function migrateLegacySeedContent() {
-  const legacy = seedContent.legacy;
   const current = seedContent.current;
 
   db.transaction(() => {
-    db.prepare(`
-      UPDATE bulletins SET title = ?, body = ?
-      WHERE author = 'SysOp' AND title = ? AND body = ?
-    `).run(current.bulletinTitle, current.bulletinBody, legacy.bulletinTitle, legacy.bulletinBody);
+    for (const source of [seedContent.legacy, seedContent.previous]) {
+      db.prepare(`
+        UPDATE bulletins SET title = ?, body = ?
+        WHERE author = 'SysOp' AND title = ? AND body = ?
+      `).run(current.bulletinTitle, current.bulletinBody, source.bulletinTitle, source.bulletinBody);
 
-    db.prepare(`
-      UPDATE messages SET subject = ?, body = ?
-      WHERE base_id = 1 AND from_user = 'SysOp' AND to_user = 'All'
-        AND subject = ? AND body = ?
-    `).run(current.messageSubject, current.messageBody, legacy.messageSubject, legacy.messageBody);
+      db.prepare(`
+        UPDATE messages SET subject = ?, body = ?
+        WHERE base_id = 1 AND from_user = 'SysOp' AND to_user = 'All'
+          AND subject = ? AND body = ?
+      `).run(current.messageSubject, current.messageBody, source.messageSubject, source.messageBody);
 
-    db.prepare(`
-      UPDATE motd SET body = ?
-      WHERE author = 'SysOp' AND body = ?
-    `).run(current.motdBody, legacy.motdBody);
+      db.prepare(`
+        UPDATE motd SET body = ?
+        WHERE author = 'SysOp' AND body = ?
+      `).run(current.motdBody, source.motdBody);
 
-    db.prepare(`
-      UPDATE graffiti SET message = ?
-      WHERE username = 'SysOp' AND message = ?
-    `).run(current.graffitiMessage, legacy.graffitiMessage);
+      db.prepare(`
+        UPDATE graffiti SET message = ?
+        WHERE username = 'SysOp' AND message = ?
+      `).run(current.graffitiMessage, source.graffitiMessage);
+    }
+
+    const oldQuestion = 'What is your favorite AI coding assistant?';
+    const oldOptions = ['Claude', 'ChatGPT', 'Copilot', 'Gemini', 'Other'];
+    const newOptions = ['Messages', 'Files', 'Doors', 'Chat', 'The community'];
+    let hasCurrentPoll = Boolean(db.prepare(`
+      SELECT id FROM polls WHERE author = 'SysOp' AND question = ? LIMIT 1
+    `).get('What brings you back to a BBS?'));
+    const stockPolls = db.prepare(`
+      SELECT id FROM polls WHERE author = 'SysOp' AND question = ? ORDER BY id
+    `).all(oldQuestion);
+    for (const stockPoll of stockPolls) {
+      const options = db.prepare(`
+        SELECT id, option_text FROM poll_options
+        WHERE poll_id = ? ORDER BY sort_order, id
+      `).all(stockPoll.id);
+      const isStock = options.length === oldOptions.length &&
+        options.every((option, index) => option.option_text === oldOptions[index]);
+      if (!isStock || hasCurrentPoll) continue;
+
+      const voteCount = db.prepare(`
+        SELECT COUNT(*) AS count FROM poll_votes WHERE poll_id = ?
+      `).get(stockPoll.id).count;
+      if (voteCount === 0) {
+        db.prepare('UPDATE polls SET question = ? WHERE id = ?')
+          .run('What brings you back to a BBS?', stockPoll.id);
+        const updateOption = db.prepare('UPDATE poll_options SET option_text = ? WHERE id = ?');
+        options.forEach((option, index) => updateOption.run(newOptions[index], option.id));
+      } else {
+        const result = db.prepare(`
+          INSERT INTO polls (question, author) VALUES (?, ?)
+        `).run('What brings you back to a BBS?', 'SysOp');
+        const insertOption = db.prepare(`
+          INSERT INTO poll_options (poll_id, option_text, sort_order) VALUES (?, ?, ?)
+        `);
+        newOptions.forEach((option, index) => insertOption.run(result.lastInsertRowid, option, index));
+      }
+      hasCurrentPoll = true;
+    }
   })();
 }
 
@@ -370,7 +437,7 @@ const users = {
   },
 
   update(id, fields) {
-    const allowed = ['real_name', 'location', 'email', 'access_level'];
+    const allowed = ['real_name', 'location', 'email', 'access_level', 'menu_mode'];
     const sets = [];
     const values = [];
     for (const [key, val] of Object.entries(fields)) {
@@ -431,6 +498,42 @@ const messages = {
     `).get(baseId, userId).count;
   },
 
+  getUnreadByBase(baseId, userId) {
+    return db.prepare(`
+      SELECT m.* FROM messages m
+      WHERE m.base_id = ? AND NOT EXISTS (
+        SELECT 1 FROM message_read mr
+        WHERE mr.user_id = ? AND mr.message_id = m.id
+      )
+      ORDER BY m.created_at ASC, m.id ASC
+    `).all(baseId, userId);
+  },
+
+  getUnreadByBases(baseIds, userId) {
+    if (!Array.isArray(baseIds) || baseIds.length === 0) return [];
+    const placeholders = baseIds.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT m.* FROM messages m
+      WHERE m.base_id IN (${placeholders}) AND NOT EXISTS (
+        SELECT 1 FROM message_read mr
+        WHERE mr.user_id = ? AND mr.message_id = m.id
+      )
+      ORDER BY m.created_at ASC, m.id ASC
+    `).all(...baseIds, userId);
+  },
+
+  countUnreadByBases(baseIds, userId) {
+    if (!Array.isArray(baseIds) || baseIds.length === 0) return 0;
+    const placeholders = baseIds.map(() => '?').join(', ');
+    return db.prepare(`
+      SELECT COUNT(*) AS count FROM messages m
+      WHERE m.base_id IN (${placeholders}) AND NOT EXISTS (
+        SELECT 1 FROM message_read mr
+        WHERE mr.user_id = ? AND mr.message_id = m.id
+      )
+    `).get(...baseIds, userId).count;
+  },
+
   markRead(messageId, userId) {
     db.prepare(`
       INSERT OR IGNORE INTO message_read (user_id, message_id) VALUES (?, ?)
@@ -483,7 +586,31 @@ const callLog = {
   },
 
   getRecent(limit = 20) {
-    return db.prepare('SELECT * FROM call_log ORDER BY login_time DESC LIMIT ?').all(limit);
+    return db.prepare('SELECT * FROM call_log ORDER BY login_time DESC, id DESC LIMIT ?').all(limit);
+  },
+
+  getPrevious(currentLogId) {
+    return db.prepare(`
+      SELECT * FROM call_log
+      WHERE id <> ?
+      ORDER BY login_time DESC, id DESC
+      LIMIT 1
+    `).get(currentLogId) || null;
+  },
+
+  countToday() {
+    return db.prepare(`
+      SELECT COUNT(*) AS count FROM call_log
+      WHERE date(login_time, 'localtime') = date('now', 'localtime')
+    `).get().count;
+  },
+
+  countSince(timestamp, excludeUserId = null) {
+    if (!timestamp) return 0;
+    return db.prepare(`
+      SELECT COUNT(*) AS count FROM call_log
+      WHERE login_time > ? AND (? IS NULL OR user_id <> ?)
+    `).get(timestamp, excludeUserId, excludeUserId).count;
   }
 };
 
@@ -506,6 +633,11 @@ const files = {
 
   getTotal() {
     return db.prepare('SELECT COUNT(*) as count FROM files').get().count;
+  },
+
+  countSince(timestamp) {
+    if (!timestamp) return 0;
+    return db.prepare('SELECT COUNT(*) AS count FROM files WHERE created_at > ?').get(timestamp).count;
   }
 };
 
